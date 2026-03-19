@@ -1,0 +1,12 @@
+# LLM Configuration - Anthropic
+# Provider: anthropic
+
+provider: anthropic
+
+model: claude-3-5-sonnet-20241022
+temperature: 0.7
+max_tokens: 4096
+
+# API settings (can be overridden by environment variables)
+api_key: ${env:ANTHROPIC_API_KEY}
+api_endpoint: null

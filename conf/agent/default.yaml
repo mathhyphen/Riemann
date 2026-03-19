@@ -1,0 +1,13 @@
+# Agent Configuration
+
+# Verification loop settings
+max_iterations: 10
+max_proof_attempts: 3
+code_fix_attempts: 3
+
+# Timeout settings
+timeout_seconds: 60.0
+
+# Output settings
+stream_output: true
+verbose: true

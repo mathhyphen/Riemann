@@ -1,0 +1,11 @@
+# Lean Configuration - Local
+# Backend: Local executable
+
+backend: local
+
+# Lean executable
+lean_path: ${env:LEAN_PATH:lean}
+lean_library_path: ${env:LEAN_LIBRARY_PATH:}
+
+# Execution settings
+timeout: 60.0

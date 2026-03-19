@@ -21,14 +21,18 @@ def LLMFactory(name: str, **kwargs) -> "LLMClient":
     return client_cls(**kwargs)
 
 
-from .client import LLMClient
+from .client import LLMClient, LLMConfig, LLMResponse
 from .anthropic_client import AnthropicClient
 from .openai_client import OpenAIClient
+from .prompt_builder import ProofPromptBuilder
 
 __all__ = [
     "LLMClient",
+    "LLMConfig",
+    "LLMResponse",
     "AnthropicClient",
     "OpenAIClient",
     "LLMFactory",
     "register_llm_client",
+    "ProofPromptBuilder",
 ]

@@ -1,0 +1,12 @@
+# Lean Configuration - HTTP
+# Backend: HTTP API
+
+backend: http
+
+# Server URL
+base_url: ${env:LEAN_API_URL:http://localhost:5000}
+
+# Connection settings
+timeout: 30.0
+max_retries: 3
+retry_delay: 1.0
