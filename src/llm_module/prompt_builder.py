@@ -40,20 +40,20 @@ When providing a proof:
 
     PROOF_TEMPLATE = """## Theorem
 ```
-{ theorem_name} : { theorem_statement }
+{theorem_name} : {theorem_statement}
 ```
 
 ## Previous Attempts (for reference)
-{ previous_attempts}
+{previous_attempts}
 
 ## Current Context
-- Error from last attempt: { last_error}
-- Error category: { error_category}
+- Error from last attempt: {last_error}
+- Error category: {error_category}
 
 ## Task
 Generate a proof for the theorem above.
 
-{ focus_instruction}
+{focus_instruction}
 
 Provide your response in the following format:
 ### Proof Strategy
@@ -70,24 +70,24 @@ Provide your response in the following format:
 
     RETRY_TEMPLATE = """## Theorem
 ```
-{ theorem_name} : { theorem_statement }
+{theorem_name} : {theorem_statement}
 ```
 
 ## Previous Proof Attempt
 ```lean
-{ previous_proof}
+{previous_proof}
 ```
 
 ## Error Message
 ```
-{ error_message}
+{error_message}
 ```
 
 ## Error Category
-{ error_category}
+{error_category}
 
 ## Task
-Fix the proof above to resolve the error. The error is a { error_category}.
+Fix the proof above to resolve the error. The error is a {error_category}.
 
 Provide your response in the following format:
 ### Fixed Proof Strategy
@@ -247,9 +247,9 @@ Theorem: {theorem_name} : {theorem_statement}
 List the required imports in the following format:
 ### Imports
 ```lean
-import Mathlib.{library_name}
+import Mathlib.{{library_name}}
 -- or
-import Std.{library_name}
+import Std.{{library_name}}
 ```
 """
 

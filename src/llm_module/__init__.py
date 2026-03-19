@@ -1,5 +1,7 @@
 """LLM module for interacting with various language model providers."""
 
+# ruff: noqa: E402
+
 from typing import Dict, Type
 
 LLM_CLIENTS: Dict[str, Type["LLMClient"]] = {}

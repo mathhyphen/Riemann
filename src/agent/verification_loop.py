@@ -14,6 +14,7 @@ from .state import (
 )
 from .proof_generator import ProofGenerator
 from .proof_to_lean import ProofToLeanConverter
+from ..lean_api import LeanRequest, LeanValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class VerificationLoop:
             r"failed to synthesize",
             r"cannot solve goal",
         ],
-        ErrorCategory.UNDEFINIED_NAME: [
+        ErrorCategory.UNDEFINED_NAME: [
             r"unknown identifier",
             r"unknown function",
             r"未定义的名称",
@@ -248,11 +249,15 @@ class VerificationLoop:
         error_category = "N/A"
 
         if context.proof_attempts:
-            last_attempt = context.proof_attempts[-1]
+            recent_attempts = context.proof_attempts[-3:]
+            last_attempt = recent_attempts[-1]
             previous_attempts = [
                 {
-                    "strategy": a.lean_code[:200] for a in context.proof_attempts[-3:]
+                    "strategy": attempt.proof_idea or "N/A",
+                    "lean_code": attempt.lean_code,
+                    "error": attempt.error_message or "None",
                 }
+                for attempt in recent_attempts
             ]
             last_error = last_attempt.error_message or "None"
             if last_attempt.error_category:
@@ -277,11 +282,25 @@ class VerificationLoop:
             Verification response
         """
         try:
-            response = self.verifier_api.verify_proof(
-                code=lean_code,
-                timeout=self.config.timeout_seconds,
+            if hasattr(self.verifier_api, "verify_proof"):
+                return self.verifier_api.verify_proof(
+                    code=lean_code,
+                    timeout=self.config.timeout_seconds,
+                )
+
+            response = self.verifier_api.verify(
+                LeanRequest(code=lean_code, timeout=self.config.timeout_seconds)
             )
-            return response
+            if getattr(response, "is_success", False):
+                return {"success": True}
+
+            error_message = response.message
+            if response.errors:
+                error_message = "; ".join(str(error) for error in response.errors)
+
+            return {"success": False, "error": error_message}
+        except LeanValidationError as e:
+            return {"success": False, "error": str(e)}
         except Exception as e:
             logger.error(f"Verification API error: {e}")
             return {"success": False, "error": str(e)}
@@ -360,9 +379,7 @@ class VerificationLoop:
 
         proof_idea_errors = {
             ErrorCategory.TACTIC_FAILED,
-            ErrorCategory.UNDEFINIED_NAME,
+            ErrorCategory.UNDEFINED_NAME,
         }
-
-        consecutive_failures = 3
 
         return error_category in proof_idea_errors

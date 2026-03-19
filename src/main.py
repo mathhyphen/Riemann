@@ -11,20 +11,26 @@ import logging
 import os
 import sys
 import time
-from typing import Optional
 
+from dotenv import load_dotenv
 from rich.console import Console
 
-# Add src to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.cli import RiemannCLI
-from src.llm_module import LLMFactory, LLMConfig
-from src.lean_api import LeanAPIClient, LeanConfig
-from src.agent.proof_generator import ProofGenerator
-from src.agent.proof_to_lean import ProofToLeanConverter
-from src.agent.verification_loop import VerificationLoop
-from src.agent.state import AgentConfig
+try:
+    from .agent.proof_generator import ProofGenerator
+    from .agent.proof_to_lean import ProofToLeanConverter
+    from .agent.state import AgentConfig
+    from .agent.verification_loop import VerificationLoop
+    from .cli import RiemannCLI
+    from .lean_api import LeanAPIClient, LeanConfig
+    from .llm_module import LLMConfig, LLMFactory
+except ImportError:  # pragma: no cover - script execution fallback
+    from src.agent.proof_generator import ProofGenerator
+    from src.agent.proof_to_lean import ProofToLeanConverter
+    from src.agent.state import AgentConfig
+    from src.agent.verification_loop import VerificationLoop
+    from src.cli import RiemannCLI
+    from src.lean_api import LeanAPIClient, LeanConfig
+    from src.llm_module import LLMConfig, LLMFactory
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +38,20 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def detect_llm_provider() -> str:
+    """Select an LLM provider based on explicit config or available API keys."""
+    provider = os.environ.get("LLM_PROVIDER")
+    if provider:
+        return provider
+
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai"
+
+    return "anthropic"
 
 
 class RiemannApp:
@@ -133,7 +153,7 @@ class RiemannApp:
             # Initialize LLM client
             llm_config = LLMConfig()
             llm_client = LLMFactory(
-                os.environ.get("LLM_PROVIDER", "anthropic"),
+                detect_llm_provider(),
                 config=llm_config
             )
 
@@ -142,6 +162,11 @@ class RiemannApp:
                 base_url=os.environ.get("LEAN_API_URL", "http://localhost:5000")
             )
             lean_client = LeanAPIClient(lean_config)
+            if not lean_client.health_check():
+                raise RuntimeError(
+                    f"Lean server is unavailable at {lean_config.base_url}. "
+                    "Set LEAN_API_URL to a healthy server before running proofs."
+                )
 
             # Initialize agent components
             proof_generator = ProofGenerator(llm_client, llm_config)
@@ -327,6 +352,8 @@ def main() -> int:
     Returns:
         Exit code.
     """
+    load_dotenv()
+
     parser = create_parser()
     args = parser.parse_args()
 

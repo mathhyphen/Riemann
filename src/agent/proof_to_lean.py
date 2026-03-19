@@ -3,7 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +14,8 @@ class LeanTemplate:
 
     theorem_template: str = """{imports}
 
-{ theorem_name} : { theorem_statement } := by
-{ proof_code}
+theorem {theorem_name} : {theorem_statement} := by
+{proof_code}
 """
     imports_template: str = """import Mathlib"""
 
@@ -37,6 +37,7 @@ class LeanTemplate:
         "split",
         "left",
         "right",
+        "rfl",
         "exfalso",
         "trivial",
         "assumption",
@@ -94,7 +95,7 @@ class ProofToLeanConverter:
 
         if not lean_code:
             logger.warning("Could not extract proof, using theorem only")
-            lean_code = "  sorry"
+            lean_code = "sorry"
 
         formatted_code = self.format_proof(lean_code)
 
@@ -165,9 +166,9 @@ class ProofToLeanConverter:
                     break
 
         if tactics:
-            return "\n".join(f"  {t}" for t in tactics)
+            return "\n".join(tactics)
 
-        return "  sorry"
+        return "sorry"
 
     def _clean_tactic(self, tactic_line: str) -> str:
         """Clean and normalize a tactic line.

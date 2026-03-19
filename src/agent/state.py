@@ -29,7 +29,7 @@ class ErrorCategory(Enum):
     SYNTAX_ERROR = "syntax_error"  # Invalid Lean syntax
     TYPE_ERROR = "type_error"  # Type mismatch
     TACTIC_FAILED = "tactic_failed"  # Tactic cannot prove goal
-    UNDEFINIED_NAME = "undefined_name"  # Reference to undefined identifier
+    UNDEFINED_NAME = "undefined_name"  # Reference to undefined identifier
     IMPORT_ERROR = "import_error"  # Missing import
     PROOF_IDEA_ERROR = "proof_idea_error"  # Fundamental proof strategy wrong
     TIMEOUT = "timeout"  # Verification took too long
@@ -75,7 +75,7 @@ class AgentContext:
     @property
     def current_proof_attempt(self) -> Optional[ProofAttempt]:
         """Get the most recent proof attempt."""
-        if self proof_attempts:
+        if self.proof_attempts:
             return self.proof_attempts[-1]
         return None
 
