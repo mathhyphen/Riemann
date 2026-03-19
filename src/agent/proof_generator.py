@@ -1,21 +1,11 @@
 """Proof generator using LLM for mathematical proof generation."""
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generator, Optional
+from typing import Any, Dict, Generator, Optional
+
+from ..llm_module.client import LLMConfig
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class LLMConfig:
-    """Configuration for LLM API calls."""
-
-    model: str = "claude-3-5-sonnet-20241022"
-    temperature: float = 0.7
-    max_tokens: int = 4096
-    api_endpoint: Optional[str] = None
-
 
 class ProofGenerator:
     """Generate mathematical proofs using LLM.
@@ -44,15 +34,15 @@ When providing a proof:
 
     PROOF_TEMPLATE = """## Theorem
 ```
-{ theorem_name} : { theorem_statement }
+{theorem_name} : {theorem_statement}
 ```
 
 ## Previous Attempts (for reference)
-{ previous_attempts}
+{previous_attempts}
 
 ## Current Context
-- Error from last attempt: { last_error}
-- Error category: { error_category}
+- Error from last attempt: {last_error}
+- Error category: {error_category}
 
 ## Task
 Generate a proof for the theorem above.
@@ -219,13 +209,14 @@ Provide your response in the following format:
         Returns:
             LLM response text
         """
-        return self.llm_client.generate(
+        response = self.llm_client.generate(
             prompt=prompt,
             system_prompt=self.SYSTEM_PROMPT,
             model=self.config.model,
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
         )
+        return response.content if hasattr(response, "content") else response
 
     def _parse_response(self, response: str) -> Dict[str, str]:
         """Parse LLM response into structured format.

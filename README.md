@@ -1,97 +1,54 @@
 # Riemann
 
-用大模型+Lean代码的逻辑化证明来帮数学工作者指导科研工作的开源AI Agent。
+Riemann is a CLI proof assistant that uses an LLM to generate Lean proofs and a Lean
+verification service to check them.
 
-## 项目简介
+## What It Does
 
-Riemann 是一个基于大语言模型和 Lean 代码的形式化证明系统，旨在帮助数学工作者进行科研工作。通过结合先进的AI技术和严格的数学证明验证，Riemann 能够：
+1. Accept a theorem statement from the user.
+2. Ask an LLM to propose a proof.
+3. Convert the response into Lean code.
+4. Send the Lean code to a verification service.
+5. Retry with error context until the proof succeeds or the iteration limit is reached.
 
-- 协助数学定理的形式化证明
-- 验证数学推导的严格性
-- 为数学研究提供智能辅助
+## Project Layout
 
-## 系统架构
-
-```
-用户输入定理
-    ↓
-LLM生成数学证明
-    ↓
-证明转Lean代码
-    ↓
-Lean API验证
-    ↓
-┌─ 正确 → 输出给用户
-│
-└─ 错误 → 分析错误类型
-          ├─ 代码层面错误 → 修正代码细节
-          └─ 证明思路错误 → 重新思考证明
-          ↓
-      重新验证 (最多10次迭代)
-```
-
-## 项目结构
-
-```
+```text
 src/
-├── agent/              # Agent核心模块
-│   ├── proof_generator.py    # LLM生成证明
-│   ├── proof_to_lean.py      # 证明转Lean代码
-│   ├── verification_loop.py   # 验证循环控制器
-│   └── state.py              # 状态机
-├── llm_module/         # LLM接口模块
-│   ├── anthropic_client.py    # Anthropic Claude
-│   ├── openai_client.py       # OpenAI GPT
-│   └── client.py              # 基类和工厂
-├── lean_api/           # Lean验证模块
-│   ├── client.py             # API客户端
-│   ├── exceptions.py         # 异常定义
-│   └── models.py             # 数据模型
-├── cli/                # CLI界面
-└── main.py             # 程序入口
+  agent/        Verification loop and proof generation
+  cli/          Rich-based terminal interface
+  lean_api/     HTTP client and models for Lean verification
+  llm_module/   LLM client abstractions and provider implementations
+  main.py       Application entry point
 ```
 
-## 快速开始
-
-### 1. 安装依赖
+## Setup
 
 ```bash
-pip install -e .
+pip install -e .[dev]
 ```
 
-### 2. 配置环境变量
-
-创建 `.env` 文件或设置环境变量：
+Create a `.env` file or export environment variables:
 
 ```bash
-# Anthropic API (推荐)
-export ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=...
+# or
+OPENAI_API_KEY=...
 
-# 或使用 OpenAI
-export OPENAI_API_KEY=sk-...
+LEAN_API_URL=http://localhost:5000
+LLM_PROVIDER=anthropic
 ```
 
-### 3. 运行
+## Usage
 
 ```bash
-# 命令行模式
+python -m src.main --version
 python -m src.main "forall n : Nat, n + 0 = n"
-
-# 交互模式
 python -m src.main
 ```
 
-## API服务
+## Notes
 
-- **Mathhammer** (推荐) - 专为数学验证设计的免费API
-- **Local Lean 4** - 本地部署，完全免费
-
-## 技术栈
-
-- 大语言模型 (LLM)
-- Lean 4 形式化证明语言
-- Python
-
-## 许可证
-
-MIT License
+- A working Lean verification server is required for end-to-end proof checking.
+- If `LLM_PROVIDER` is not set, the app auto-detects `anthropic` or `openai` from
+  available API keys.

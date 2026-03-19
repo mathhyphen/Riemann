@@ -7,10 +7,6 @@ def test_build_lean_imports_prompt_renders_expected_template() -> None:
     prompt_builder = load_module_from_source(
         "riemann_test_prompt_builder",
         "src/llm_module/prompt_builder.py",
-        replacements={
-            "import Mathlib.{library_name}": "import Mathlib.{{library_name}}",
-            "import Std.{library_name}": "import Std.{{library_name}}",
-        },
     )
 
     builder = prompt_builder.ProofPromptBuilder()

@@ -6,11 +6,7 @@ from tests.conftest import load_module_from_source
 
 
 def test_agent_context_tracks_latest_attempt_and_iteration_count() -> None:
-    state = load_module_from_source(
-        "riemann_test_agent_state",
-        "src/agent/state.py",
-        replacements={"if self proof_attempts:": "if self.proof_attempts:"},
-    )
+    state = load_module_from_source("riemann_test_agent_state", "src/agent/state.py")
 
     config = state.AgentConfig(max_iterations=2)
     context = state.AgentContext(
@@ -39,11 +35,7 @@ def test_agent_context_tracks_latest_attempt_and_iteration_count() -> None:
 
 
 def test_agent_config_remains_immutable() -> None:
-    state = load_module_from_source(
-        "riemann_test_agent_state_immutable",
-        "src/agent/state.py",
-        replacements={"if self proof_attempts:": "if self.proof_attempts:"},
-    )
+    state = load_module_from_source("riemann_test_agent_state_immutable", "src/agent/state.py")
 
     config = state.AgentConfig(max_iterations=4)
 

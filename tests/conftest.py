@@ -1,9 +1,4 @@
-"""Shared test helpers for loading source modules with minimal patches.
-
-The repository currently has a few syntax/import problems in `src/`, so the
-tests use in-memory source loading for the affected modules. This keeps the
-tests focused on the intended behavior without modifying production code.
-"""
+"""Shared test helpers for loading source modules with lightweight stubs."""
 
 from __future__ import annotations
 

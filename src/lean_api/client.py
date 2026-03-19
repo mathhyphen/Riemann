@@ -264,6 +264,34 @@ class LeanAPIClient:
         """
         return self._retry_with_backoff(self._verify, request)
 
+    def verify_proof(
+        self,
+        code: str,
+        timeout: Optional[float] = None,
+        filename: Optional[str] = None,
+    ) -> dict:
+        """Compatibility wrapper used by the app-level verification loop."""
+        request = LeanRequest(code=code, timeout=timeout, filename=filename)
+
+        try:
+            result = self.verify(request)
+        except (LeanConnectionError, LeanExecutionError, LeanServerError, LeanTimeoutError) as e:
+            return {"success": False, "error": str(e)}
+        except LeanValidationError as e:
+            details = e.details or {}
+            return {
+                "success": False,
+                "error": details.get("message", str(e)),
+                "details": details,
+            }
+
+        return {
+            "success": result.is_success,
+            "message": result.message,
+            "errors": [str(error) for error in result.errors],
+            "execution_time": result.execution_time,
+        }
+
     def _verify(self, request: LeanRequest) -> VerificationResult:
         """Internal method to submit verification request.
 
