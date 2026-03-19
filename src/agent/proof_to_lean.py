@@ -87,11 +87,16 @@ class ProofToLeanConverter:
         Returns:
             Complete Lean 4 proof file content
         """
-        lean_code = self.extract_lean_code(proof_content)
+        normalized_content = proof_content.strip()
+        lean_code = self.extract_lean_code(normalized_content)
+
+        if not lean_code and self._looks_like_lean_code(normalized_content):
+            # The proof generator often returns raw tactic text without fences.
+            lean_code = normalized_content
 
         if not lean_code:
             logger.warning("No Lean code found in content, attempting extraction")
-            lean_code = self._extract_proof_steps(proof_content)
+            lean_code = self._extract_proof_steps(normalized_content)
 
         if not lean_code:
             logger.warning("Could not extract proof, using theorem only")
@@ -105,6 +110,40 @@ class ProofToLeanConverter:
 
         logger.info(f"Converted proof for: {theorem_name}")
         return full_proof
+
+    def _looks_like_lean_code(self, content: str) -> bool:
+        """Heuristic check for raw Lean tactic text."""
+        if not content:
+            return False
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        if not lines:
+            return False
+
+        if any(re.match(r"^\d+\.\s+", line) for line in lines):
+            return False
+
+        lean_prefixes = set(self.template.valid_tactics) | {
+            "theorem",
+            "lemma",
+            "example",
+            "have",
+            "show",
+            "from",
+            "fun",
+            "|",
+            "--",
+            "refine",
+            "simpa",
+        }
+
+        matches = 0
+        for line in lines:
+            cleaned = re.sub(r"^\d+\.\s*", "", line)
+            if any(cleaned.startswith(prefix) for prefix in lean_prefixes):
+                matches += 1
+
+        return matches > 0
 
     def extract_lean_code(self, content: str) -> Optional[str]:
         """Extract Lean code from markdown-style content.

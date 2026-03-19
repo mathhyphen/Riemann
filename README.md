@@ -47,6 +47,22 @@ python -m src.main "forall n : Nat, n + 0 = n"
 python -m src.main
 ```
 
+## Fixture Benchmark
+
+Run the offline 20-problem benchmark with:
+
+```bash
+python scripts/run_fixture_benchmark.py
+```
+
+This writes:
+
+- `reports/20_problem_fixture_results.json`
+- `reports/20_problem_fixture_results.md`
+- `reports/20_problem_benchmark_report.md`
+
+The fixture benchmark validates the proof-generation pipeline shape and regression behavior without requiring an API key or a live Lean server.
+
 ## Notes
 
 - A working Lean verification server is required for end-to-end proof checking.

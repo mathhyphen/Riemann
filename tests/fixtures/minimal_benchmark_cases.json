@@ -1,0 +1,39 @@
+{
+  "cases": [
+    {
+      "case_id": "logic_true",
+      "category": "logic",
+      "difficulty": "easy",
+      "theorem_name": "logic_true",
+      "theorem_statement": "True",
+      "llm_response": "### Proof Strategy\nDirectly close the goal.\n### Lean Code\n```lean\ntrivial\n```\n### Explanation\nUse `trivial`.",
+      "expectation": {
+        "success": true,
+        "required_substrings": [
+          "theorem logic_true : True := by",
+          "trivial"
+        ],
+        "forbidden_substrings": [
+          "sorry"
+        ]
+      }
+    },
+    {
+      "case_id": "converter_expected_failure",
+      "category": "converter",
+      "difficulty": "easy",
+      "theorem_name": "converter_expected_failure",
+      "theorem_statement": "True",
+      "llm_response": "### Proof Strategy\nNo Lean code block.\n### Explanation\nThis should fall back.",
+      "expectation": {
+        "success": false,
+        "required_substrings": [
+          "theorem converter_expected_failure : True := by",
+          "sorry"
+        ],
+        "forbidden_substrings": [],
+        "error": "Fixture expected failure"
+      }
+    }
+  ]
+}
