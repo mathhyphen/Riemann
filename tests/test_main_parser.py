@@ -36,3 +36,15 @@ def test_main_version_flag_exits_cleanly(monkeypatch, capsys) -> None:
 
     assert exit_code == 0
     assert "Version: 0.1.0" in captured.out
+
+
+def test_detect_lean_backend_defaults_to_http(monkeypatch) -> None:
+    main_module = load_module_from_source(
+        "riemann_test_lean_backend_default",
+        "src/main.py",
+        stubs=build_main_stubs(),
+    )
+
+    monkeypatch.delenv("LEAN_BACKEND", raising=False)
+
+    assert main_module.detect_lean_backend() == "http"

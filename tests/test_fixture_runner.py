@@ -171,6 +171,26 @@ def test_inspect_live_environment_reports_missing_credentials() -> None:
     assert "OPENAI_API_KEY is not set for live mode." in status["issues"]
 
 
+def test_inspect_live_environment_reports_missing_minimax_credentials() -> None:
+    status = inspect_live_environment(env={}, llm_provider="minimax", lean_api_url="http://lean.local")
+
+    assert status["llm_provider"] == "minimax"
+    assert status["lean_api_url"] == "http://lean.local"
+    assert status["ready_for_client_init"] is False
+    assert "MINIMAX_API_KEY is not set for live mode." in status["issues"]
+
+
+def test_inspect_live_environment_reports_local_backend() -> None:
+    status = inspect_live_environment(
+        env={"LEAN_BACKEND": "local", "LEAN_PATH": "C:/lean/bin/lean", "MINIMAX_API_KEY": "test"},
+        llm_provider="minimax",
+    )
+
+    assert status["lean_backend"] == "local"
+    assert status["lean_path"] == "C:/lean/bin/lean"
+    assert status["ready_for_client_init"] is True
+
+
 class _FakeLiveLLM:
     def generate(self, **kwargs):
         del kwargs

@@ -28,7 +28,11 @@ class AnthropicClient(LLMClient):
         """
         self.config = config or LLMConfig()
         self._api_key = self._get_api_key()
-        self._base_url = self.config.api_endpoint or os.environ.get("ANTHROPIC_BASE_URL")
+        self._base_url = (
+            self.config.api_endpoint
+            or os.environ.get("ANTHROPIC_BASE_URL")
+            or os.environ.get("MINIMAX_BASE_URL")
+        )
         self._client = None
 
     def _get_api_key(self) -> str:
@@ -40,10 +44,14 @@ class AnthropicClient(LLMClient):
         Raises:
             ValueError: If API key is not set
         """
-        api_key = self.config.api_key or os.environ.get("ANTHROPIC_API_KEY")
+        api_key = (
+            self.config.api_key
+            or os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("MINIMAX_API_KEY")
+        )
         if not api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY environment variable is not set. "
+                "ANTHROPIC_API_KEY or MINIMAX_API_KEY environment variable is not set. "
                 "Please set it in your .env file or environment."
             )
         return api_key

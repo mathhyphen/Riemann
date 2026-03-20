@@ -28,6 +28,8 @@ from .anthropic_client import AnthropicClient
 from .openai_client import OpenAIClient
 from .prompt_builder import ProofPromptBuilder
 
+LLM_CLIENTS["minimax"] = AnthropicClient
+
 __all__ = [
     "LLMClient",
     "LLMConfig",

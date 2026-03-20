@@ -27,12 +27,16 @@ def resolve_llm_config(provider: Optional[str] = None) -> LLMConfig:
         endpoint = os.environ.get("OPENAI_BASE_URL")
     if not endpoint and provider_name == "anthropic":
         endpoint = os.environ.get("ANTHROPIC_BASE_URL")
+    if not endpoint and provider_name == "minimax":
+        endpoint = os.environ.get("MINIMAX_BASE_URL", "https://api.minimaxi.com/anthropic")
 
     api_key = os.environ.get("LLM_API_KEY")
     if not api_key and provider_name == "openai":
         api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key and provider_name == "anthropic":
         api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key and provider_name == "minimax":
+        api_key = os.environ.get("MINIMAX_API_KEY")
 
     temperature_raw = os.environ.get("LLM_TEMPERATURE")
     max_tokens_raw = os.environ.get("LLM_MAX_TOKENS")

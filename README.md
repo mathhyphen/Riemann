@@ -39,15 +39,24 @@ LEAN_API_URL=http://localhost:5000
 LLM_PROVIDER=anthropic
 ```
 
-For MiniMax Token Plan using the Anthropic-compatible endpoint, use:
+For MiniMax Token Plan, use the native MiniMax environment names:
 
 ```bash
-ANTHROPIC_API_KEY=...
-ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
-LLM_PROVIDER=anthropic
+MINIMAX_API_KEY=...
+MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic
+LLM_PROVIDER=minimax
 LLM_MODEL=MiniMax-M2.7-highspeed
 LEAN_API_URL=http://localhost:5000
 ```
+
+If you want to verify locally without running an HTTP verifier service, use:
+
+```bash
+LEAN_BACKEND=local
+LEAN_PATH=lean
+```
+
+If `lean` is already on your `PATH`, you can omit `LEAN_PATH`.
 
 ## Usage
 

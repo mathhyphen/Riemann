@@ -283,10 +283,20 @@ class VerificationLoop:
         """
         try:
             if hasattr(self.verifier_api, "verify_proof"):
-                return self.verifier_api.verify_proof(
+                response = self.verifier_api.verify_proof(
                     code=lean_code,
                     timeout=self.config.timeout_seconds,
                 )
+                if isinstance(response, dict):
+                    return response
+                if hasattr(response, "success"):
+                    return {
+                        "success": response.success,
+                        "message": getattr(response, "message", ""),
+                        "error": getattr(response, "message", ""),
+                        "errors": getattr(response, "errors", []),
+                    }
+                return response
 
             response = self.verifier_api.verify(
                 LeanRequest(code=lean_code, timeout=self.config.timeout_seconds)

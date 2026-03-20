@@ -358,9 +358,12 @@ def inspect_live_environment(
     """Inspect whether live benchmark prerequisites are available."""
 
     env = env or dict(os.environ)
+    lean_backend = env.get("LEAN_BACKEND", "http")
     chosen_provider = llm_provider or env.get("LLM_PROVIDER")
     if not chosen_provider:
-        if env.get("ANTHROPIC_API_KEY"):
+        if env.get("MINIMAX_API_KEY"):
+            chosen_provider = "minimax"
+        elif env.get("ANTHROPIC_API_KEY"):
             chosen_provider = "anthropic"
         elif env.get("OPENAI_API_KEY"):
             chosen_provider = "openai"
@@ -368,16 +371,21 @@ def inspect_live_environment(
             chosen_provider = "anthropic"
 
     lean_url = lean_api_url or env.get("LEAN_API_URL") or "http://localhost:5000"
+    lean_path = env.get("LEAN_PATH") or "lean"
     issues: list[str] = []
 
     if chosen_provider == "anthropic" and not env.get("ANTHROPIC_API_KEY"):
         issues.append("ANTHROPIC_API_KEY is not set for live mode.")
     if chosen_provider == "openai" and not env.get("OPENAI_API_KEY"):
         issues.append("OPENAI_API_KEY is not set for live mode.")
+    if chosen_provider == "minimax" and not env.get("MINIMAX_API_KEY"):
+        issues.append("MINIMAX_API_KEY is not set for live mode.")
 
     return {
         "llm_provider": chosen_provider,
+        "lean_backend": lean_backend,
         "lean_api_url": lean_url,
+        "lean_path": lean_path,
         "issues": issues,
         "ready_for_client_init": not issues,
     }
@@ -393,6 +401,7 @@ def create_live_runtime(
     """Create live benchmark dependencies from the current environment."""
 
     from src.lean_api import LeanAPIClient, LeanConfig
+    from src.lean_module import LeanFactory
     from src.llm_module import LLMFactory, resolve_llm_config
     from src.main import detect_llm_provider
 
@@ -404,13 +413,26 @@ def create_live_runtime(
     llm_config = resolve_llm_config(provider)
     llm_client = LLMFactory(provider, config=llm_config)
 
-    lean_config = LeanConfig(base_url=lean_api_url or status["lean_api_url"])
-    lean_client = LeanAPIClient(lean_config)
-    if not lean_client.health_check():
-        raise BenchmarkEnvironmentError(
-            f"Lean server is unavailable at {lean_config.base_url}. "
-            "Set LEAN_API_URL to a healthy server before running live benchmarks."
+    if status["lean_backend"] == "local":
+        lean_client = LeanFactory(
+            "local",
+            lean_path=os.environ.get("LEAN_PATH"),
+            lean_library_path=os.environ.get("LEAN_LIBRARY_PATH") or None,
+            timeout=timeout_seconds,
         )
+        if not lean_client.check_health():
+            raise BenchmarkEnvironmentError(
+                "Local Lean executable is unavailable. "
+                "Set LEAN_PATH to a working Lean 4 binary or install Lean via elan."
+            )
+    else:
+        lean_config = LeanConfig(base_url=lean_api_url or status["lean_api_url"])
+        lean_client = LeanAPIClient(lean_config)
+        if not lean_client.health_check():
+            raise BenchmarkEnvironmentError(
+                f"Lean server is unavailable at {lean_config.base_url}. "
+                "Set LEAN_API_URL to a healthy server before running live benchmarks."
+            )
 
     agent_config = AgentConfig(
         max_iterations=max_iterations,

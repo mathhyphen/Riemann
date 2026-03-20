@@ -23,6 +23,12 @@ class FakeVerifier:
         return self.result
 
 
+class FakeLocalVerifier:
+    def verify_proof(self, code: str, timeout=None):
+        del code, timeout
+        return type("LocalResult", (), {"success": True, "message": "ok", "errors": []})()
+
+
 def test_agent_context_returns_latest_attempt() -> None:
     context = AgentContext(
         theorem_name="t",
@@ -60,22 +66,42 @@ def test_verification_loop_uses_lean_request() -> None:
     assert "theorem t" in verifier.last_request.code
 
 
+def test_verification_loop_accepts_local_verify_proof_result() -> None:
+    generator = ProofGenerator(FakeLLMClient())
+    converter = ProofToLeanConverter()
+    loop = VerificationLoop(generator, converter, FakeLocalVerifier(), AgentConfig(max_iterations=1))
+
+    context = loop.verify("t", "True")
+
+    assert context.state.value == "success"
+
+
 def test_detect_llm_provider_prefers_available_keys(monkeypatch) -> None:
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "test")
 
     assert detect_llm_provider() == "openai"
 
 
-def test_resolve_llm_config_reads_anthropic_compatible_env(monkeypatch) -> None:
+def test_detect_llm_provider_prefers_minimax_key(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    assert detect_llm_provider() == "minimax"
+
+
+def test_resolve_llm_config_reads_minimax_env(monkeypatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "MiniMax-M2.7-highspeed")
-    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/anthropic")
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
     monkeypatch.setenv("LLM_TEMPERATURE", "0.2")
     monkeypatch.setenv("LLM_MAX_TOKENS", "2048")
 
-    config = resolve_llm_config("anthropic")
+    config = resolve_llm_config("minimax")
 
     assert config.model == "MiniMax-M2.7-highspeed"
     assert config.api_endpoint == "https://api.minimaxi.com/anthropic"

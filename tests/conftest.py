@@ -84,6 +84,10 @@ def build_main_stubs() -> Dict[str, types.ModuleType]:
         LeanAPIClient=type("LeanAPIClient", (), {}),
         LeanConfig=type("LeanConfig", (), {}),
     )
+    lean_module_pkg = make_module(
+        "src.lean_module",
+        LeanFactory=lambda *args, **kwargs: None,
+    )
     proof_generator_pkg = make_module(
         "src.agent.proof_generator",
         ProofGenerator=type("ProofGenerator", (), {}),
@@ -107,6 +111,7 @@ def build_main_stubs() -> Dict[str, types.ModuleType]:
         "src.cli": cli_pkg,
         "src.llm_module": llm_pkg,
         "src.lean_api": lean_pkg,
+        "src.lean_module": lean_module_pkg,
         "src.agent.proof_generator": proof_generator_pkg,
         "src.agent.proof_to_lean": proof_to_lean_pkg,
         "src.agent.verification_loop": verification_loop_pkg,
