@@ -1,13 +1,14 @@
-"""Fixture-based benchmark runner for Riemann."""
+"""Benchmark runners for Riemann."""
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, Iterable
 
 from src.agent.proof_generator import ProofGenerator
 from src.agent.proof_to_lean import ProofToLeanConverter
@@ -63,8 +64,9 @@ class BenchmarkResult:
 
 @dataclass(frozen=True)
 class FixtureBenchmarkSummary:
-    """Summary of a fixture benchmark run."""
+    """Summary of a benchmark run."""
 
+    mode: str
     total_cases: int
     passed_cases: int
     failed_cases: int
@@ -74,6 +76,10 @@ class FixtureBenchmarkSummary:
     median_duration_seconds: float
     category_breakdown: dict[str, dict[str, int]]
     results: list[BenchmarkResult]
+
+
+class BenchmarkEnvironmentError(RuntimeError):
+    """Raised when live benchmark prerequisites are not available."""
 
 
 class _SingleResponseLLM:
@@ -125,6 +131,23 @@ class _ExpectationVerifier:
             "success": False,
             "error": self.expectation.error or "Fixture expected failure",
         }
+
+
+class _CapturingVerifier:
+    """Proxy verifier that records the last Lean code sent for verification."""
+
+    def __init__(self, verifier_api: Any):
+        self.verifier_api = verifier_api
+        self.last_code = ""
+
+    def verify_proof(self, code: str, timeout: float | None = None) -> dict[str, Any]:
+        self.last_code = code
+        if hasattr(self.verifier_api, "verify_proof"):
+            return self.verifier_api.verify_proof(code=code, timeout=timeout)
+        return self.verifier_api.verify(code=code, timeout=timeout)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.verifier_api, name)
 
 
 def _parse_case(raw_case: dict[str, Any]) -> BenchmarkCase:
@@ -196,10 +219,7 @@ def _simple_case_catalog() -> dict[str, dict[str, Any]]:
         },
         "case_08": {
             "difficulty": "easy",
-            "llm_response": _make_llm_response(
-                "1. intro P Q hP hQ\n2. exact And.intro hP hQ",
-                fenced=False,
-            ),
+            "llm_response": _make_llm_response("intro P Q hP hQ\nexact And.intro hP hQ", fenced=False),
             "required_substrings": ["intro P Q hP hQ", "And.intro hP hQ"],
         },
         "case_09": {
@@ -304,23 +324,125 @@ def load_cases(path: str | Path) -> list[BenchmarkCase]:
     return [_parse_case(case) for case in payload["cases"]]
 
 
-def _run_case(case: BenchmarkCase) -> BenchmarkResult:
+def filter_cases(
+    cases: Iterable[BenchmarkCase],
+    *,
+    case_ids: Iterable[str] | None = None,
+    categories: Iterable[str] | None = None,
+    limit: int | None = None,
+) -> list[BenchmarkCase]:
+    """Filter cases by ids, categories, and optional limit."""
+
+    selected = list(cases)
+    id_set = {case_id for case_id in (case_ids or []) if case_id}
+    category_set = {category for category in (categories or []) if category}
+
+    if id_set:
+        selected = [case for case in selected if case.case_id in id_set]
+    if category_set:
+        selected = [case for case in selected if case.category in category_set]
+    if limit is not None:
+        selected = selected[:limit]
+
+    return selected
+
+
+def inspect_live_environment(
+    *,
+    env: dict[str, str] | None = None,
+    lean_api_url: str | None = None,
+    llm_provider: str | None = None,
+) -> dict[str, Any]:
+    """Inspect whether live benchmark prerequisites are available."""
+
+    env = env or dict(os.environ)
+    chosen_provider = llm_provider or env.get("LLM_PROVIDER")
+    if not chosen_provider:
+        if env.get("ANTHROPIC_API_KEY"):
+            chosen_provider = "anthropic"
+        elif env.get("OPENAI_API_KEY"):
+            chosen_provider = "openai"
+        else:
+            chosen_provider = "anthropic"
+
+    lean_url = lean_api_url or env.get("LEAN_API_URL") or "http://localhost:5000"
+    issues: list[str] = []
+
+    if chosen_provider == "anthropic" and not env.get("ANTHROPIC_API_KEY"):
+        issues.append("ANTHROPIC_API_KEY is not set for live mode.")
+    if chosen_provider == "openai" and not env.get("OPENAI_API_KEY"):
+        issues.append("OPENAI_API_KEY is not set for live mode.")
+
+    return {
+        "llm_provider": chosen_provider,
+        "lean_api_url": lean_url,
+        "issues": issues,
+        "ready_for_client_init": not issues,
+    }
+
+
+def create_live_runtime(
+    *,
+    max_iterations: int = 5,
+    timeout_seconds: float = 60.0,
+    llm_provider: str | None = None,
+    lean_api_url: str | None = None,
+) -> tuple[Any, Any, AgentConfig]:
+    """Create live benchmark dependencies from the current environment."""
+
+    from src.lean_api import LeanAPIClient, LeanConfig
+    from src.llm_module import LLMConfig, LLMFactory
+    from src.main import detect_llm_provider
+
+    status = inspect_live_environment(lean_api_url=lean_api_url, llm_provider=llm_provider)
+    if status["issues"]:
+        raise BenchmarkEnvironmentError(" ".join(status["issues"]))
+
+    provider = llm_provider or detect_llm_provider()
+    llm_config = LLMConfig()
+    llm_client = LLMFactory(provider, config=llm_config)
+
+    lean_config = LeanConfig(base_url=lean_api_url or status["lean_api_url"])
+    lean_client = LeanAPIClient(lean_config)
+    if not lean_client.health_check():
+        raise BenchmarkEnvironmentError(
+            f"Lean server is unavailable at {lean_config.base_url}. "
+            "Set LEAN_API_URL to a healthy server before running live benchmarks."
+        )
+
+    agent_config = AgentConfig(
+        max_iterations=max_iterations,
+        timeout_seconds=timeout_seconds,
+        stream_output=False,
+        verbose=False,
+    )
+    return llm_client, lean_client, agent_config
+
+
+def _run_case_with_runtime(
+    case: BenchmarkCase,
+    *,
+    mode: str,
+    llm_client: Any,
+    verifier_api: Any,
+    config: AgentConfig,
+) -> BenchmarkResult:
     started_at = time.perf_counter()
-    generator = ProofGenerator(_SingleResponseLLM(case.llm_response))
+    generator = ProofGenerator(llm_client)
     converter = ProofToLeanConverter()
-    verifier = _ExpectationVerifier(case.expectation)
+    verifier = _CapturingVerifier(verifier_api)
     loop = VerificationLoop(
         proof_generator=generator,
         lean_converter=converter,
         verifier_api=verifier,
-        config=AgentConfig(max_iterations=1, stream_output=False, verbose=False),
+        config=config,
     )
 
     context = loop.verify(case.theorem_name, case.theorem_statement)
     duration_seconds = time.perf_counter() - started_at
     actual_success = context.state == ProofState.SUCCESS
     error = context.recent_errors[-1]["message"] if context.recent_errors else ""
-    passed_expectation = actual_success == case.expectation.success and verifier.expectation_checks_passed
+    expectation_checks_passed = getattr(verifier_api, "expectation_checks_passed", True)
 
     return BenchmarkResult(
         case_id=case.case_id,
@@ -331,13 +453,24 @@ def _run_case(case: BenchmarkCase) -> BenchmarkResult:
         theorem_truth=case.theorem_truth,
         expected_success=case.expectation.success,
         actual_success=actual_success,
-        passed_expectation=passed_expectation,
+        passed_expectation=actual_success == case.expectation.success and expectation_checks_passed,
         state=context.state.value,
         iterations=context.current_iteration,
         error=error,
         lean_code=verifier.last_code,
         duration_seconds=duration_seconds,
-        notes=case.notes,
+        notes=case.notes if mode == "fixture" else "",
+    )
+
+
+def _run_fixture_case(case: BenchmarkCase) -> BenchmarkResult:
+    verifier = _ExpectationVerifier(case.expectation)
+    return _run_case_with_runtime(
+        case,
+        mode="fixture",
+        llm_client=_SingleResponseLLM(case.llm_response),
+        verifier_api=verifier,
+        config=AgentConfig(max_iterations=1, stream_output=False, verbose=False),
     )
 
 
@@ -361,24 +494,77 @@ def _build_truth_breakdown(results: list[BenchmarkResult]) -> dict[str, int]:
     return breakdown
 
 
-def run_benchmark(cases: list[BenchmarkCase]) -> FixtureBenchmarkSummary:
-    """Run a fixture benchmark suite."""
-
-    results = [_run_case(case) for case in cases]
+def _build_summary(mode: str, results: list[BenchmarkResult]) -> FixtureBenchmarkSummary:
     passed_cases = sum(result.passed_expectation for result in results)
     actual_successes = sum(result.actual_success for result in results)
     expected_successes = sum(result.expected_success for result in results)
 
     return FixtureBenchmarkSummary(
+        mode=mode,
         total_cases=len(results),
         passed_cases=passed_cases,
         failed_cases=len(results) - passed_cases,
         expected_successes=expected_successes,
         actual_successes=actual_successes,
         truth_breakdown=_build_truth_breakdown(results),
-        median_duration_seconds=median(result.duration_seconds for result in results),
+        median_duration_seconds=median(result.duration_seconds for result in results) if results else 0.0,
         category_breakdown=_build_category_breakdown(results),
         results=results,
+    )
+
+
+def run_fixture_benchmark(cases: list[BenchmarkCase]) -> FixtureBenchmarkSummary:
+    """Run the fixture benchmark suite."""
+
+    return _build_summary("fixture", [_run_fixture_case(case) for case in cases])
+
+
+def run_live_benchmark(
+    cases: list[BenchmarkCase],
+    *,
+    llm_client: Any,
+    verifier_api: Any,
+    config: AgentConfig,
+) -> FixtureBenchmarkSummary:
+    """Run a live benchmark suite against real clients."""
+
+    results = [
+        _run_case_with_runtime(
+            case,
+            mode="live",
+            llm_client=llm_client,
+            verifier_api=verifier_api,
+            config=config,
+        )
+        for case in cases
+    ]
+    return _build_summary("live", results)
+
+
+def run_benchmark(
+    cases: list[BenchmarkCase],
+    *,
+    mode: str = "fixture",
+    llm_client: Any | None = None,
+    verifier_api: Any | None = None,
+    config: AgentConfig | None = None,
+) -> FixtureBenchmarkSummary:
+    """Run benchmark cases in fixture or live mode."""
+
+    if mode == "fixture":
+        return run_fixture_benchmark(cases)
+
+    if mode != "live":
+        raise ValueError(f"Unsupported benchmark mode: {mode}")
+
+    if llm_client is None or verifier_api is None or config is None:
+        raise ValueError("live mode requires llm_client, verifier_api, and config")
+
+    return run_live_benchmark(
+        cases,
+        llm_client=llm_client,
+        verifier_api=verifier_api,
+        config=config,
     )
 
 
@@ -386,6 +572,7 @@ def summary_to_dict(summary: FixtureBenchmarkSummary) -> dict[str, Any]:
     """Convert a summary to a JSON-serializable dict."""
 
     return {
+        "mode": summary.mode,
         "total_cases": summary.total_cases,
         "passed_cases": summary.passed_cases,
         "failed_cases": summary.failed_cases,
@@ -402,8 +589,9 @@ def render_markdown_report(summary: FixtureBenchmarkSummary) -> str:
     """Render a compact Markdown report."""
 
     lines = [
-        "# Fixture Benchmark Report",
+        "# Fixture Benchmark Report" if summary.mode == "fixture" else "# Live Benchmark Report",
         "",
+        f"- Mode: {summary.mode}",
         f"- Total cases: {summary.total_cases}",
         f"- Matched expectation: {summary.passed_cases}",
         f"- Mismatched expectation: {summary.failed_cases}",

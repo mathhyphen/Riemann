@@ -1,5 +1,6 @@
 # Fixture Benchmark Report
 
+- Mode: fixture
 - Total cases: 20
 - Matched expectation: 20
 - Mismatched expectation: 0

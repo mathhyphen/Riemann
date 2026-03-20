@@ -10,7 +10,7 @@
     "false": 8,
     "classically_true": 1
   },
-  "median_duration_seconds": 9.98498871922493e-05,
+  "median_duration_seconds": 0.00011220003943890333,
   "category_breakdown": {
     "nat_identity": {
       "total": 5,
@@ -63,7 +63,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_01 : forall n : Nat, n + 0 = n := by\n  intro n\n  simpa using Nat.add_zero n\n",
-      "duration_seconds": 0.00021050008945167065,
+      "duration_seconds": 0.00023630005307495594,
       "notes": "Canonical right-identity of addition on naturals."
     },
     {
@@ -80,7 +80,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_02 : forall n : Nat, 0 + n = n := by\n  intro n\n  simpa using Nat.zero_add n\n",
-      "duration_seconds": 6.54999166727066e-05,
+      "duration_seconds": 7.020006887614727e-05,
       "notes": "Canonical left-identity of addition on naturals."
     },
     {
@@ -97,7 +97,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_03 : forall n : Nat, n * 1 = n := by\n  intro n\n  simpa using Nat.mul_one n\n",
-      "duration_seconds": 6.079999729990959e-05,
+      "duration_seconds": 6.149988621473312e-05,
       "notes": "Simple multiplicative identity."
     },
     {
@@ -114,7 +114,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_04 : forall n : Nat, 1 * n = n := by\n  intro n\n  simpa using Nat.one_mul n\n",
-      "duration_seconds": 4.83999028801918e-05,
+      "duration_seconds": 5.159992724657059e-05,
       "notes": "Simple multiplicative identity on the left."
     },
     {
@@ -131,7 +131,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_05 : forall n : Nat, n - n = 0 := by\n  intro n\n  simpa using Nat.sub_self n\n",
-      "duration_seconds": 4.469999112188816e-05,
+      "duration_seconds": 0.00013569998554885387,
       "notes": "Standard subtraction simplification on naturals."
     },
     {
@@ -148,7 +148,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_06 : forall a b c : Nat, a + (b + c) = (a + b) + c := by\n  intro a b c\n  simpa [Nat.add_assoc]\n",
-      "duration_seconds": 4.2899977415800095e-05,
+      "duration_seconds": 5.1900045946240425e-05,
       "notes": "Associativity is a basic algebraic rewrite."
     },
     {
@@ -165,7 +165,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_07 : forall P : Prop, P -> P := by\n  intro P h\n  exact h\n",
-      "duration_seconds": 4.219985567033291e-05,
+      "duration_seconds": 4.9099791795015335e-05,
       "notes": "Direct implication introduction and reuse."
     },
     {
@@ -182,7 +182,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_08 : forall P Q : Prop, P -> Q -> P /\\ Q := by\n  intro P Q hP hQ\n  exact And.intro hP hQ\n",
-      "duration_seconds": 5.519995465874672e-05,
+      "duration_seconds": 6.070011295378208e-05,
       "notes": "Straightforward conjunction construction."
     },
     {
@@ -199,7 +199,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_09 : forall P Q : Prop, P /\\ Q -> Q /\\ P := by\n  intro P Q h\n  exact And.intro h.right h.left\n",
-      "duration_seconds": 4.439987242221832e-05,
+      "duration_seconds": 4.850002005696297e-05,
       "notes": "Commutativity of conjunction by unpacking assumptions."
     },
     {
@@ -216,7 +216,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_10 : forall P Q : Prop, P -> Q -> P \\/ Q := by\n  intro P Q hP hQ\n  exact Or.inl hP\n",
-      "duration_seconds": 4.139984957873821e-05,
+      "duration_seconds": 5.179992876946926e-05,
       "notes": "Immediate disjunction introduction."
     },
     {
@@ -233,7 +233,7 @@
       "iterations": 1,
       "error": "False for all naturals except no cases; impossible as stated.",
       "lean_code": "import Mathlib\n\ntheorem case_11 : forall n : Nat, n = n + 1 := by\n  intro n\n  omega\n",
-      "duration_seconds": 0.0006794999353587627,
+      "duration_seconds": 0.000696699833497405,
       "notes": "False for all naturals except no cases; impossible as stated."
     },
     {
@@ -250,7 +250,7 @@
       "iterations": 1,
       "error": "Strict inequality is irreflexive on naturals.",
       "lean_code": "import Mathlib\n\ntheorem case_12 : forall n : Nat, n < n := by\n  intro n\n  omega\n",
-      "duration_seconds": 0.0001301998272538185,
+      "duration_seconds": 0.00013660010881721973,
       "notes": "Strict inequality is irreflexive on naturals."
     },
     {
@@ -267,7 +267,7 @@
       "iterations": 1,
       "error": "Only true for zero, so the universal claim is false.",
       "lean_code": "import Mathlib\n\ntheorem case_13 : forall n : Nat, n = 0 := by\n  intro n\n  rfl\n",
-      "duration_seconds": 0.00011270004324615002,
+      "duration_seconds": 0.00012139999307692051,
       "notes": "Only true for zero, so the universal claim is false."
     },
     {
@@ -284,7 +284,7 @@
       "iterations": 1,
       "error": "Fails whenever b is nonzero.",
       "lean_code": "import Mathlib\n\ntheorem case_14 : forall a b : Nat, a + b = a := by\n  intro a b\n  omega\n",
-      "duration_seconds": 0.00010469998233020306,
+      "duration_seconds": 0.00010930001735687256,
       "notes": "Fails whenever b is nonzero."
     },
     {
@@ -301,7 +301,7 @@
       "iterations": 1,
       "error": "Fails for positive inputs such as a = 1 and b = 1.",
       "lean_code": "import Mathlib\n\ntheorem case_15 : forall a b : Nat, a * b = 0 := by\n  intro a b\n  omega\n",
-      "duration_seconds": 0.00010329997166991234,
+      "duration_seconds": 0.00010799989104270935,
       "notes": "Fails for positive inputs such as a = 1 and b = 1."
     },
     {
@@ -318,7 +318,7 @@
       "iterations": 1,
       "error": "Contradicts the assumption that P implies Q.",
       "lean_code": "import Mathlib\n\ntheorem case_16 : forall P Q : Prop, (P -> Q) -> P -> ~Q := by\n  intro P Q hPQ hP hQ\n  exact hQ (hPQ hP)\n",
-      "duration_seconds": 0.00010459986515343189,
+      "duration_seconds": 0.00014199991710484028,
       "notes": "Contradicts the assumption that P implies Q."
     },
     {
@@ -335,7 +335,7 @@
       "iterations": 1,
       "error": "Useful expected pipeline failure without explicit classical handling.",
       "lean_code": "import Mathlib\n\ntheorem case_17 : forall P : Prop, P \\/ ~P := by\n  intro P\n  exact Classical.em P\n",
-      "duration_seconds": 0.00010750000365078449,
+      "duration_seconds": 0.0001151000615209341,
       "notes": "Semantically provable with classical reasoning, but benchmark expects failure."
     },
     {
@@ -352,7 +352,7 @@
       "iterations": 1,
       "error": "Useful expected pipeline failure even though the theorem is provable by explosion.",
       "lean_code": "import Mathlib\n\ntheorem case_18 : forall P Q : Prop, P -> ~P -> Q := by\n  intro P Q hP hnP\n  exact False.elim (hnP hP)\n",
-      "duration_seconds": 0.00011899997480213642,
+      "duration_seconds": 0.0001216998789459467,
       "notes": "Semantically provable by explosion, but benchmark expects failure."
     },
     {
@@ -369,7 +369,7 @@
       "iterations": 1,
       "error": "No natural number satisfies this equality.",
       "lean_code": "import Mathlib\n\ntheorem case_19 : exists n : Nat, n = n + 1 := by\n  refine Exists.intro 0 ?_\n  omega\n",
-      "duration_seconds": 0.00010189996100962162,
+      "duration_seconds": 0.0001503999810665846,
       "notes": "No natural number satisfies this equality."
     },
     {
@@ -386,7 +386,7 @@
       "iterations": 1,
       "error": "The universal equality is false because distinct naturals need not be equal.",
       "lean_code": "import Mathlib\n\ntheorem case_20 : forall a b : Nat, a = b := by\n  intro a b\n  rfl\n",
-      "duration_seconds": 9.779981337487698e-05,
+      "duration_seconds": 0.0002354998141527176,
       "notes": "The universal equality is false because distinct naturals need not be equal."
     }
   ]
