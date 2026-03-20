@@ -7,7 +7,8 @@
 - Expected successes: 10
 - Actual successes: 10
 - Truth breakdown: {'true': 11, 'false': 8, 'classically_true': 1}
-- Median latency: 0.0001s
+- Diagnostic breakdown: {'success': 10, 'expected_negative_case': 8, 'pipeline_caveat': 2}
+- Median latency: 0.0004s
 
 ## By Category
 

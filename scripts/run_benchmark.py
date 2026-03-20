@@ -13,6 +13,7 @@ from src.benchmarking.fixture_runner import (
     create_live_runtime,
     filter_cases,
     load_cases,
+    render_detailed_report,
     render_markdown_report,
     run_benchmark,
     summary_to_dict,
@@ -50,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limit the number of cases after filtering.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of worker threads to use.",
+    )
+    parser.add_argument(
         "--max-iterations",
         type=int,
         default=5,
@@ -81,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--markdown-output",
         help="Path to write Markdown results. Defaults depend on mode.",
     )
+    parser.add_argument(
+        "--report-output",
+        help="Path to write a detailed Markdown report.",
+    )
     return parser
 
 
@@ -92,6 +103,8 @@ def _default_output_path(kind: str, mode: str) -> str:
         return f"reports/20_problem_{suffix}_results.jsonl"
     if kind == "markdown":
         return f"reports/20_problem_{suffix}_results.md"
+    if kind == "report":
+        return f"reports/20_problem_{suffix}_report.md"
     raise ValueError(f"Unknown output kind: {kind}")
 
 
@@ -136,15 +149,18 @@ def main() -> int:
         raise SystemExit("No benchmark cases matched the requested filters.")
 
     if args.mode == "fixture":
-        summary = run_benchmark(cases, mode="fixture")
+        summary = run_benchmark(cases, mode="fixture", workers=args.workers)
     else:
         try:
-            llm_client, verifier_api, config = create_live_runtime(
-                max_iterations=args.max_iterations,
-                timeout_seconds=args.timeout_seconds,
-                llm_provider=args.llm_provider,
-                lean_api_url=args.lean_api_url,
-            )
+            def runtime_factory():
+                return create_live_runtime(
+                    max_iterations=args.max_iterations,
+                    timeout_seconds=args.timeout_seconds,
+                    llm_provider=args.llm_provider,
+                    lean_api_url=args.lean_api_url,
+                )
+
+            llm_client, verifier_api, config = runtime_factory()
         except BenchmarkEnvironmentError as exc:
             raise SystemExit(str(exc)) from exc
 
@@ -154,6 +170,8 @@ def main() -> int:
             llm_client=llm_client,
             verifier_api=verifier_api,
             config=config,
+            runtime_factory=runtime_factory,
+            workers=args.workers,
         )
 
     payload = summary_to_dict(summary)
@@ -161,6 +179,10 @@ def main() -> int:
     markdown_path = _write_markdown(
         args.markdown_output or _default_output_path("markdown", args.mode),
         render_markdown_report(summary),
+    )
+    report_path = _write_markdown(
+        args.report_output or _default_output_path("report", args.mode),
+        render_detailed_report(summary),
     )
 
     jsonl_path = None
@@ -175,6 +197,7 @@ def main() -> int:
     print(f"Median latency: {summary.median_duration_seconds:.4f}s")
     print(f"JSON: {json_path}")
     print(f"Markdown: {markdown_path}")
+    print(f"Report: {report_path}")
     if jsonl_path is not None:
         print(f"JSONL: {jsonl_path}")
     return 0

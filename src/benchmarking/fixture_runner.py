@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import median
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from src.agent.proof_generator import ProofGenerator
 from src.agent.proof_to_lean import ProofToLeanConverter
@@ -73,6 +74,7 @@ class FixtureBenchmarkSummary:
     expected_successes: int
     actual_successes: int
     truth_breakdown: dict[str, int]
+    diagnostic_breakdown: dict[str, int]
     median_duration_seconds: float
     category_breakdown: dict[str, dict[str, int]]
     results: list[BenchmarkResult]
@@ -494,6 +496,44 @@ def _build_truth_breakdown(results: list[BenchmarkResult]) -> dict[str, int]:
     return breakdown
 
 
+def _classify_diagnostic(result: BenchmarkResult) -> str:
+    if result.actual_success:
+        return "success"
+    if not result.expected_success and result.theorem_truth in {"true", "classically_true"}:
+        return "pipeline_caveat"
+    if result.theorem_truth == "classically_true":
+        return "needs_classical_reasoning"
+    if result.theorem_truth == "true":
+        return "unexpected_failure"
+    if "timeout" in result.error.lower():
+        return "timeout"
+    if "missing expected fragment" in result.error.lower():
+        return "conversion_mismatch"
+    if result.state == "max_iterations":
+        return "expected_negative_case"
+    return "verification_failure"
+
+
+def _build_diagnostic_breakdown(results: list[BenchmarkResult]) -> dict[str, int]:
+    breakdown: dict[str, int] = {}
+    for result in results:
+        label = _classify_diagnostic(result)
+        breakdown[label] = breakdown.get(label, 0) + 1
+    return breakdown
+
+
+def _run_cases_in_parallel(
+    cases: list[BenchmarkCase],
+    worker_fn: Callable[[BenchmarkCase], BenchmarkResult],
+    workers: int,
+) -> list[BenchmarkResult]:
+    if workers <= 1:
+        return [worker_fn(case) for case in cases]
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(worker_fn, cases))
+
+
 def _build_summary(mode: str, results: list[BenchmarkResult]) -> FixtureBenchmarkSummary:
     passed_cases = sum(result.passed_expectation for result in results)
     actual_successes = sum(result.actual_success for result in results)
@@ -507,37 +547,64 @@ def _build_summary(mode: str, results: list[BenchmarkResult]) -> FixtureBenchmar
         expected_successes=expected_successes,
         actual_successes=actual_successes,
         truth_breakdown=_build_truth_breakdown(results),
+        diagnostic_breakdown=_build_diagnostic_breakdown(results),
         median_duration_seconds=median(result.duration_seconds for result in results) if results else 0.0,
         category_breakdown=_build_category_breakdown(results),
         results=results,
     )
 
 
-def run_fixture_benchmark(cases: list[BenchmarkCase]) -> FixtureBenchmarkSummary:
+def run_fixture_benchmark(
+    cases: list[BenchmarkCase],
+    *,
+    workers: int = 1,
+) -> FixtureBenchmarkSummary:
     """Run the fixture benchmark suite."""
 
-    return _build_summary("fixture", [_run_fixture_case(case) for case in cases])
+    return _build_summary("fixture", _run_cases_in_parallel(cases, _run_fixture_case, workers))
 
 
 def run_live_benchmark(
     cases: list[BenchmarkCase],
     *,
-    llm_client: Any,
-    verifier_api: Any,
-    config: AgentConfig,
+    llm_client: Any | None = None,
+    verifier_api: Any | None = None,
+    config: AgentConfig | None = None,
+    runtime_factory: Callable[[], tuple[Any, Any, AgentConfig]] | None = None,
+    workers: int = 1,
 ) -> FixtureBenchmarkSummary:
     """Run a live benchmark suite against real clients."""
 
-    results = [
-        _run_case_with_runtime(
-            case,
-            mode="live",
-            llm_client=llm_client,
-            verifier_api=verifier_api,
-            config=config,
-        )
-        for case in cases
-    ]
+    if workers > 1:
+        if runtime_factory is None:
+            raise ValueError("live mode with workers > 1 requires runtime_factory")
+
+        def _worker(case: BenchmarkCase) -> BenchmarkResult:
+            live_llm_client, live_verifier_api, live_config = runtime_factory()
+            return _run_case_with_runtime(
+                case,
+                mode="live",
+                llm_client=live_llm_client,
+                verifier_api=live_verifier_api,
+                config=live_config,
+            )
+
+        results = _run_cases_in_parallel(cases, _worker, workers)
+    else:
+        if llm_client is None or verifier_api is None or config is None:
+            raise ValueError("live mode requires llm_client, verifier_api, and config")
+
+        results = [
+            _run_case_with_runtime(
+                case,
+                mode="live",
+                llm_client=llm_client,
+                verifier_api=verifier_api,
+                config=config,
+            )
+            for case in cases
+        ]
+
     return _build_summary("live", results)
 
 
@@ -548,23 +615,24 @@ def run_benchmark(
     llm_client: Any | None = None,
     verifier_api: Any | None = None,
     config: AgentConfig | None = None,
+    runtime_factory: Callable[[], tuple[Any, Any, AgentConfig]] | None = None,
+    workers: int = 1,
 ) -> FixtureBenchmarkSummary:
     """Run benchmark cases in fixture or live mode."""
 
     if mode == "fixture":
-        return run_fixture_benchmark(cases)
+        return run_fixture_benchmark(cases, workers=workers)
 
     if mode != "live":
         raise ValueError(f"Unsupported benchmark mode: {mode}")
-
-    if llm_client is None or verifier_api is None or config is None:
-        raise ValueError("live mode requires llm_client, verifier_api, and config")
 
     return run_live_benchmark(
         cases,
         llm_client=llm_client,
         verifier_api=verifier_api,
         config=config,
+        runtime_factory=runtime_factory,
+        workers=workers,
     )
 
 
@@ -579,6 +647,7 @@ def summary_to_dict(summary: FixtureBenchmarkSummary) -> dict[str, Any]:
         "expected_successes": summary.expected_successes,
         "actual_successes": summary.actual_successes,
         "truth_breakdown": summary.truth_breakdown,
+        "diagnostic_breakdown": summary.diagnostic_breakdown,
         "median_duration_seconds": summary.median_duration_seconds,
         "category_breakdown": summary.category_breakdown,
         "results": [asdict(result) for result in summary.results],
@@ -598,6 +667,7 @@ def render_markdown_report(summary: FixtureBenchmarkSummary) -> str:
         f"- Expected successes: {summary.expected_successes}",
         f"- Actual successes: {summary.actual_successes}",
         f"- Truth breakdown: {summary.truth_breakdown}",
+        f"- Diagnostic breakdown: {summary.diagnostic_breakdown}",
         f"- Median latency: {summary.median_duration_seconds:.4f}s",
         "",
         "## By Category",
@@ -634,5 +704,79 @@ def render_markdown_report(summary: FixtureBenchmarkSummary) -> str:
                 notes=result.notes or "-",
             )
         )
+
+    return "\n".join(lines) + "\n"
+
+
+def render_detailed_report(summary: FixtureBenchmarkSummary) -> str:
+    """Render a richer narrative report with diagnostics."""
+
+    non_success_diagnostics = {
+        label: count for label, count in summary.diagnostic_breakdown.items() if label != "success"
+    }
+    dominant_label = (
+        max(non_success_diagnostics, key=non_success_diagnostics.get)
+        if non_success_diagnostics
+        else "success"
+    )
+
+    lines = [
+        "# Benchmark Summary",
+        "",
+        f"- Mode: {summary.mode}",
+        f"- Total cases: {summary.total_cases}",
+        f"- Matched expectation: {summary.passed_cases}",
+        f"- Mismatched expectation: {summary.failed_cases}",
+        f"- Actual successes: {summary.actual_successes}",
+        f"- Truth breakdown: {summary.truth_breakdown}",
+        f"- Diagnostic breakdown: {summary.diagnostic_breakdown}",
+        "",
+        "## Key Findings",
+        "",
+    ]
+
+    if summary.failed_cases == 0:
+        lines.append("1. All cases matched the benchmark expectation.")
+    else:
+        lines.append(f"1. {summary.failed_cases} case(s) diverged from the benchmark expectation.")
+
+    lines.append(
+        f"2. The dominant non-success diagnostic bucket was `{dominant_label}`."
+    )
+    lines.append(
+        f"3. The suite covered {len(summary.category_breakdown)} categories with median latency {summary.median_duration_seconds:.4f}s."
+    )
+
+    lines.extend(
+        [
+            "",
+            "## Failure Diagnostics",
+            "",
+            "| Diagnostic | Count |",
+            "| --- | ---: |",
+        ]
+    )
+
+    for label, count in sorted(summary.diagnostic_breakdown.items()):
+        lines.append(f"| {label} | {count} |")
+
+    lines.extend(
+        [
+            "",
+            "## Cases Requiring Attention",
+            "",
+            "| Case | Category | State | Error |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+
+    attention_rows = [result for result in summary.results if not result.actual_success or not result.passed_expectation]
+    if attention_rows:
+        for result in attention_rows:
+            lines.append(
+                f"| {result.case_id} | {result.category} | {result.state} | {(result.error or '-').replace('|', '/')} |"
+            )
+    else:
+        lines.append("| - | - | - | No attention needed |")
 
     return "\n".join(lines) + "\n"

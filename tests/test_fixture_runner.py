@@ -8,6 +8,7 @@ from src.benchmarking.fixture_runner import (
     filter_cases,
     inspect_live_environment,
     load_cases,
+    render_detailed_report,
     render_markdown_report,
     run_benchmark,
 )
@@ -75,6 +76,17 @@ def test_render_markdown_report_contains_counts() -> None:
     assert "| converter | 1 | 1 | 0 |" in markdown
 
 
+def test_render_detailed_report_contains_diagnostics() -> None:
+    cases = load_cases("tests/fixtures/minimal_benchmark_cases.json")
+    summary = run_benchmark(cases, mode="fixture", workers=2)
+
+    report = render_detailed_report(summary)
+
+    assert "# Benchmark Summary" in report
+    assert "## Failure Diagnostics" in report
+    assert "expected_negative_case" in report or "success" in report
+
+
 def test_official_benchmark_fixture_loads_all_20_cases() -> None:
     cases = load_cases("benchmarks/benchmark_cases.json")
 
@@ -135,3 +147,12 @@ def test_run_benchmark_supports_live_mode_with_injected_clients() -> None:
     assert summary.total_cases == 1
     assert summary.actual_successes == 1
     assert summary.results[0].case_id == "case_01"
+
+
+def test_run_benchmark_supports_parallel_fixture_mode() -> None:
+    cases = filter_cases(load_cases("benchmarks/benchmark_cases.json"), categories=["logic_basic"])
+    summary = run_benchmark(cases, mode="fixture", workers=3)
+
+    assert summary.mode == "fixture"
+    assert summary.total_cases == 4
+    assert summary.passed_cases == 4

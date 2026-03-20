@@ -52,13 +52,14 @@ python -m src.main
 Run the offline 20-problem benchmark with:
 
 ```bash
-python scripts/run_benchmark.py --mode fixture
+python scripts/run_benchmark.py --mode fixture --workers 4
 ```
 
 This writes:
 
 - `reports/20_problem_fixture_results.json`
 - `reports/20_problem_fixture_results.md`
+- `reports/20_problem_fixture_report.md`
 - `reports/20_problem_benchmark_report.md`
 
 The fixture benchmark validates the proof-generation pipeline shape and regression behavior without requiring an API key or a live Lean server.
@@ -66,7 +67,7 @@ The fixture benchmark validates the proof-generation pipeline shape and regressi
 When you have a real verifier and provider credentials available, you can run live mode:
 
 ```bash
-python scripts/run_benchmark.py --mode live --category logic_basic --jsonl-output reports/live_logic_basic.jsonl
+python scripts/run_benchmark.py --mode live --workers 4 --category logic_basic --jsonl-output reports/live_logic_basic.jsonl
 ```
 
 Useful flags:
@@ -74,7 +75,9 @@ Useful flags:
 - `--category <name>` to run one or more categories
 - `--case-id <id>` to run specific cases
 - `--limit <n>` to trim the filtered set
+- `--workers <n>` to parallelize case execution
 - `--jsonl-output <path>` for one-result-per-line output
+- `--report-output <path>` for a richer Markdown summary
 
 ## Notes
 
