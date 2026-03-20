@@ -1,0 +1,171 @@
+{
+  "name": "riemann-20-case-fixture-benchmark",
+  "description": "Balanced 20-case theorem fixture set for CLI and proof-verification evaluation.",
+  "case_count": 20,
+  "balance": {
+    "expected_success": 10,
+    "expected_failure": 10
+  },
+  "cases": [
+    {
+      "id": "case_01",
+      "category": "nat_identity",
+      "statement": "forall n : Nat, n + 0 = n",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Canonical right-identity of addition on naturals."
+    },
+    {
+      "id": "case_02",
+      "category": "nat_identity",
+      "statement": "forall n : Nat, 0 + n = n",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Canonical left-identity of addition on naturals."
+    },
+    {
+      "id": "case_03",
+      "category": "nat_identity",
+      "statement": "forall n : Nat, n * 1 = n",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Simple multiplicative identity."
+    },
+    {
+      "id": "case_04",
+      "category": "nat_identity",
+      "statement": "forall n : Nat, 1 * n = n",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Simple multiplicative identity on the left."
+    },
+    {
+      "id": "case_05",
+      "category": "nat_identity",
+      "statement": "forall n : Nat, n - n = 0",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Standard subtraction simplification on naturals."
+    },
+    {
+      "id": "case_06",
+      "category": "nat_rewrite",
+      "statement": "forall a b c : Nat, a + (b + c) = (a + b) + c",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Associativity is a basic algebraic rewrite."
+    },
+    {
+      "id": "case_07",
+      "category": "logic_basic",
+      "statement": "forall P : Prop, P -> P",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Direct implication introduction and reuse."
+    },
+    {
+      "id": "case_08",
+      "category": "logic_basic",
+      "statement": "forall P Q : Prop, P -> Q -> P /\\ Q",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Straightforward conjunction construction."
+    },
+    {
+      "id": "case_09",
+      "category": "logic_basic",
+      "statement": "forall P Q : Prop, P /\\ Q -> Q /\\ P",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Commutativity of conjunction by unpacking assumptions."
+    },
+    {
+      "id": "case_10",
+      "category": "logic_basic",
+      "statement": "forall P Q : Prop, P -> Q -> P \\/ Q",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "success",
+      "rationale": "Immediate disjunction introduction."
+    },
+    {
+      "id": "case_11",
+      "category": "false_statement",
+      "statement": "forall n : Nat, n = n + 1",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "False for all naturals except no cases; impossible as stated."
+    },
+    {
+      "id": "case_12",
+      "category": "false_statement",
+      "statement": "forall n : Nat, n < n",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Strict inequality is irreflexive on naturals."
+    },
+    {
+      "id": "case_13",
+      "category": "false_statement",
+      "statement": "forall n : Nat, n = 0",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Only true for zero, so the universal claim is false."
+    },
+    {
+      "id": "case_14",
+      "category": "false_statement",
+      "statement": "forall a b : Nat, a + b = a",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Fails whenever b is nonzero."
+    },
+    {
+      "id": "case_15",
+      "category": "false_statement",
+      "statement": "forall a b : Nat, a * b = 0",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Fails for positive inputs such as a = 1 and b = 1."
+    },
+    {
+      "id": "case_16",
+      "category": "logic_false",
+      "statement": "forall P Q : Prop, (P -> Q) -> P -> ~Q",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Contradicts the assumption that P implies Q."
+    },
+    {
+      "id": "case_17",
+      "category": "logic_caveat",
+      "statement": "forall P : Prop, P \\/ ~P",
+      "theorem_truth": "classically_true",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Useful expected pipeline failure without explicit classical handling."
+    },
+    {
+      "id": "case_18",
+      "category": "logic_caveat",
+      "statement": "forall P Q : Prop, P -> ~P -> Q",
+      "theorem_truth": "true",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "Useful expected pipeline failure even though the theorem is provable by explosion."
+    },
+    {
+      "id": "case_19",
+      "category": "existential_false",
+      "statement": "exists n : Nat, n = n + 1",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "No natural number satisfies this equality."
+    },
+    {
+      "id": "case_20",
+      "category": "false_statement",
+      "statement": "forall a b : Nat, a = b",
+      "theorem_truth": "false",
+      "expected_pipeline_outcome": "failure",
+      "rationale": "The universal equality is false because distinct naturals need not be equal."
+    }
+  ]
+}

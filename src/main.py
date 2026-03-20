@@ -22,7 +22,8 @@ try:
     from .agent.verification_loop import VerificationLoop
     from .cli import RiemannCLI
     from .lean_api import LeanAPIClient, LeanConfig
-    from .llm_module import LLMConfig, LLMFactory
+    from .lean_module import LeanFactory
+    from .llm_module import LLMFactory, resolve_llm_config
 except ImportError:  # pragma: no cover - script execution fallback
     from src.agent.proof_generator import ProofGenerator
     from src.agent.proof_to_lean import ProofToLeanConverter
@@ -30,7 +31,8 @@ except ImportError:  # pragma: no cover - script execution fallback
     from src.agent.verification_loop import VerificationLoop
     from src.cli import RiemannCLI
     from src.lean_api import LeanAPIClient, LeanConfig
-    from src.llm_module import LLMConfig, LLMFactory
+    from src.lean_module import LeanFactory
+    from src.llm_module import LLMFactory, resolve_llm_config
 
 # Configure logging
 logging.basicConfig(
@@ -46,12 +48,19 @@ def detect_llm_provider() -> str:
     if provider:
         return provider
 
+    if os.environ.get("MINIMAX_API_KEY"):
+        return "minimax"
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "anthropic"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
 
     return "anthropic"
+
+
+def detect_lean_backend() -> str:
+    """Select the Lean verification backend."""
+    return os.environ.get("LEAN_BACKEND", "http")
 
 
 class RiemannApp:
@@ -151,22 +160,39 @@ class RiemannApp:
 
         try:
             # Initialize LLM client
-            llm_config = LLMConfig()
+            provider = detect_llm_provider()
+            llm_config = resolve_llm_config(provider)
             llm_client = LLMFactory(
-                detect_llm_provider(),
+                provider,
                 config=llm_config
             )
 
-            # Initialize Lean API client
-            lean_config = LeanConfig(
-                base_url=os.environ.get("LEAN_API_URL", "http://localhost:5000")
-            )
-            lean_client = LeanAPIClient(lean_config)
-            if not lean_client.health_check():
-                raise RuntimeError(
-                    f"Lean server is unavailable at {lean_config.base_url}. "
-                    "Set LEAN_API_URL to a healthy server before running proofs."
+            # Initialize Lean verifier
+            lean_backend = detect_lean_backend()
+            if lean_backend == "local":
+                lean_client = LeanFactory(
+                    "local",
+                    lean_path=os.environ.get("LEAN_PATH"),
+                    lake_path=os.environ.get("LAKE_PATH"),
+                    lean_library_path=os.environ.get("LEAN_LIBRARY_PATH") or None,
+                    project_root=os.environ.get("LEAN_PROJECT_ROOT"),
+                    timeout=60.0,
                 )
+                if not lean_client.check_health():
+                    raise RuntimeError(
+                        "Local Lean executable is unavailable. "
+                        "Set LEAN_PATH to a working Lean 4 binary or install Lean via elan."
+                    )
+            else:
+                lean_config = LeanConfig(
+                    base_url=os.environ.get("LEAN_API_URL", "http://localhost:5000")
+                )
+                lean_client = LeanAPIClient(lean_config)
+                if not lean_client.health_check():
+                    raise RuntimeError(
+                        f"Lean server is unavailable at {lean_config.base_url}. "
+                        "Set LEAN_API_URL to a healthy server before running proofs."
+                    )
 
             # Initialize agent components
             proof_generator = ProofGenerator(llm_client, llm_config)
