@@ -27,3 +27,8 @@ Thumbs.db
 # Local config
 *.local
 lean_module
+.lean_verifier/
+lean_verifier/
+local_tools/
+-lean_verifier/
+elan-init.ps1

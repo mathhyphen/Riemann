@@ -372,6 +372,7 @@ def inspect_live_environment(
 
     lean_url = lean_api_url or env.get("LEAN_API_URL") or "http://localhost:5000"
     lean_path = env.get("LEAN_PATH") or "lean"
+    lean_project_root = env.get("LEAN_PROJECT_ROOT")
     issues: list[str] = []
 
     if chosen_provider == "anthropic" and not env.get("ANTHROPIC_API_KEY"):
@@ -386,6 +387,7 @@ def inspect_live_environment(
         "lean_backend": lean_backend,
         "lean_api_url": lean_url,
         "lean_path": lean_path,
+        "lean_project_root": lean_project_root,
         "issues": issues,
         "ready_for_client_init": not issues,
     }
@@ -417,7 +419,9 @@ def create_live_runtime(
         lean_client = LeanFactory(
             "local",
             lean_path=os.environ.get("LEAN_PATH"),
+            lake_path=os.environ.get("LAKE_PATH"),
             lean_library_path=os.environ.get("LEAN_LIBRARY_PATH") or None,
+            project_root=os.environ.get("LEAN_PROJECT_ROOT"),
             timeout=timeout_seconds,
         )
         if not lean_client.check_health():

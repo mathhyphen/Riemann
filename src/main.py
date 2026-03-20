@@ -173,7 +173,9 @@ class RiemannApp:
                 lean_client = LeanFactory(
                     "local",
                     lean_path=os.environ.get("LEAN_PATH"),
+                    lake_path=os.environ.get("LAKE_PATH"),
                     lean_library_path=os.environ.get("LEAN_LIBRARY_PATH") or None,
+                    project_root=os.environ.get("LEAN_PROJECT_ROOT"),
                     timeout=60.0,
                 )
                 if not lean_client.check_health():

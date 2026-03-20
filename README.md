@@ -54,9 +54,10 @@ If you want to verify locally without running an HTTP verifier service, use:
 ```bash
 LEAN_BACKEND=local
 LEAN_PATH=lean
+LEAN_PROJECT_ROOT=.lean_verifier
 ```
 
-If `lean` is already on your `PATH`, you can omit `LEAN_PATH`.
+If `lean` is already on your `PATH`, you can omit `LEAN_PATH`. `LEAN_PROJECT_ROOT` should point at a Lean project directory that has `Mathlib` available.
 
 ## Usage
 
