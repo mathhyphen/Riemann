@@ -39,6 +39,16 @@ LEAN_API_URL=http://localhost:5000
 LLM_PROVIDER=anthropic
 ```
 
+For MiniMax Token Plan using the Anthropic-compatible endpoint, use:
+
+```bash
+ANTHROPIC_API_KEY=...
+ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+LLM_PROVIDER=anthropic
+LLM_MODEL=MiniMax-M2.7-highspeed
+LEAN_API_URL=http://localhost:5000
+```
+
 ## Usage
 
 ```bash

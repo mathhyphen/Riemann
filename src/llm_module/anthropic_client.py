@@ -28,6 +28,7 @@ class AnthropicClient(LLMClient):
         """
         self.config = config or LLMConfig()
         self._api_key = self._get_api_key()
+        self._base_url = self.config.api_endpoint or os.environ.get("ANTHROPIC_BASE_URL")
         self._client = None
 
     def _get_api_key(self) -> str:
@@ -39,7 +40,7 @@ class AnthropicClient(LLMClient):
         Raises:
             ValueError: If API key is not set
         """
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = self.config.api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError(
                 "ANTHROPIC_API_KEY environment variable is not set. "
@@ -53,13 +54,27 @@ class AnthropicClient(LLMClient):
         if self._client is None:
             try:
                 import anthropic
-                self._client = anthropic.Anthropic(api_key=self._api_key)
+                client_kwargs = {"api_key": self._api_key}
+                if self._base_url:
+                    client_kwargs["base_url"] = self._base_url
+                self._client = anthropic.Anthropic(**client_kwargs)
             except ImportError:
                 raise ImportError(
                     "anthropic package is required. "
                     "Install it with: pip install anthropic"
                 )
         return self._client
+
+    def _extract_text_content(self, response: Any) -> str:
+        """Extract user-visible text from heterogeneous content blocks."""
+
+        content_parts = []
+        for block in getattr(response, "content", []) or []:
+            text = getattr(block, "text", None)
+            if text:
+                content_parts.append(text)
+
+        return "\n".join(content_parts).strip()
 
     def generate(
         self,
@@ -99,9 +114,7 @@ class AnthropicClient(LLMClient):
                 **kwargs,
             )
 
-            content = ""
-            if response.content:
-                content = response.content[0].text
+            content = self._extract_text_content(response)
 
             usage = {
                 "input_tokens": response.usage.input_tokens,

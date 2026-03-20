@@ -393,7 +393,7 @@ def create_live_runtime(
     """Create live benchmark dependencies from the current environment."""
 
     from src.lean_api import LeanAPIClient, LeanConfig
-    from src.llm_module import LLMConfig, LLMFactory
+    from src.llm_module import LLMFactory, resolve_llm_config
     from src.main import detect_llm_provider
 
     status = inspect_live_environment(lean_api_url=lean_api_url, llm_provider=llm_provider)
@@ -401,7 +401,7 @@ def create_live_runtime(
         raise BenchmarkEnvironmentError(" ".join(status["issues"]))
 
     provider = llm_provider or detect_llm_provider()
-    llm_config = LLMConfig()
+    llm_config = resolve_llm_config(provider)
     llm_client = LLMFactory(provider, config=llm_config)
 
     lean_config = LeanConfig(base_url=lean_api_url or status["lean_api_url"])

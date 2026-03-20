@@ -22,7 +22,7 @@ try:
     from .agent.verification_loop import VerificationLoop
     from .cli import RiemannCLI
     from .lean_api import LeanAPIClient, LeanConfig
-    from .llm_module import LLMConfig, LLMFactory
+    from .llm_module import LLMFactory, resolve_llm_config
 except ImportError:  # pragma: no cover - script execution fallback
     from src.agent.proof_generator import ProofGenerator
     from src.agent.proof_to_lean import ProofToLeanConverter
@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - script execution fallback
     from src.agent.verification_loop import VerificationLoop
     from src.cli import RiemannCLI
     from src.lean_api import LeanAPIClient, LeanConfig
-    from src.llm_module import LLMConfig, LLMFactory
+    from src.llm_module import LLMFactory, resolve_llm_config
 
 # Configure logging
 logging.basicConfig(
@@ -151,9 +151,10 @@ class RiemannApp:
 
         try:
             # Initialize LLM client
-            llm_config = LLMConfig()
+            provider = detect_llm_provider()
+            llm_config = resolve_llm_config(provider)
             llm_client = LLMFactory(
-                detect_llm_provider(),
+                provider,
                 config=llm_config
             )
 

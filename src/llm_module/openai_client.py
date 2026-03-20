@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 class OpenAIClient(LLMClient):
     """OpenAI GPT API client."""
 
+    DEFAULT_MODEL = "gpt-4o"
+
     def __init__(self, config: Optional[LLMConfig] = None):
         """Initialize OpenAI client.
 
@@ -21,7 +23,8 @@ class OpenAIClient(LLMClient):
             config: LLM configuration
         """
         self.config = config or LLMConfig()
-        self._api_key = os.environ.get("OPENAI_API_KEY")
+        self._api_key = self.config.api_key or os.environ.get("OPENAI_API_KEY")
+        self._base_url = self.config.api_endpoint or os.environ.get("OPENAI_BASE_URL")
         if not self._api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
 
@@ -52,9 +55,12 @@ class OpenAIClient(LLMClient):
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
 
-        client = OpenAI(api_key=self._api_key)
+        client_kwargs = {"api_key": self._api_key}
+        if self._base_url:
+            client_kwargs["base_url"] = self._base_url
+        client = OpenAI(**client_kwargs)
 
-        model = model or self.config.model
+        model = model or self.config.model or self.DEFAULT_MODEL
         temperature = temperature if temperature is not None else self.config.temperature
         max_tokens = max_tokens or self.config.max_tokens
 
@@ -113,9 +119,12 @@ class OpenAIClient(LLMClient):
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
 
-        client = OpenAI(api_key=self._api_key)
+        client_kwargs = {"api_key": self._api_key}
+        if self._base_url:
+            client_kwargs["base_url"] = self._base_url
+        client = OpenAI(**client_kwargs)
 
-        model = model or self.config.model
+        model = model or self.config.model or self.DEFAULT_MODEL
         temperature = temperature if temperature is not None else self.config.temperature
         max_tokens = max_tokens or self.config.max_tokens
 
@@ -136,8 +145,6 @@ class OpenAIClient(LLMClient):
         for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-
-    DEFAULT_MODEL = "gpt-4o"
 
     def get_model_name(self) -> str:
         """Get the current model name.

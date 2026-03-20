@@ -77,6 +77,7 @@ def build_main_stubs() -> Dict[str, types.ModuleType]:
         "src.llm_module",
         LLMFactory=lambda *args, **kwargs: None,
         LLMConfig=type("LLMConfig", (), {}),
+        resolve_llm_config=lambda *args, **kwargs: None,
     )
     lean_pkg = make_module(
         "src.lean_api",

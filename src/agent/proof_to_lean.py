@@ -103,6 +103,7 @@ class ProofToLeanConverter:
             logger.warning("Could not extract proof, using theorem only")
             lean_code = "sorry"
 
+        lean_code = self._strip_outer_declaration(lean_code)
         formatted_code = self.format_proof(lean_code)
 
         full_proof = self._build_full_proof(
@@ -111,6 +112,31 @@ class ProofToLeanConverter:
 
         logger.info(f"Converted proof for: {theorem_name}")
         return full_proof
+
+    def _strip_outer_declaration(self, lean_code: str) -> str:
+        """Remove a top-level theorem wrapper when the model emits one directly."""
+
+        lines = [line.rstrip() for line in lean_code.splitlines()]
+        non_empty = [line for line in lines if line.strip()]
+        if not non_empty:
+            return lean_code
+
+        first_line = non_empty[0].strip()
+        declaration_prefixes = ("theorem ", "lemma ", "example ")
+        if not first_line.startswith(declaration_prefixes):
+            return lean_code
+
+        if ":= by" in first_line:
+            after_by = first_line.split(":= by", 1)[1].strip()
+            remaining_lines = non_empty[1:]
+            if after_by:
+                return "\n".join([after_by, *remaining_lines]).strip()
+            return "\n".join(remaining_lines).strip() or "sorry"
+
+        if first_line.endswith(" by"):
+            return "\n".join(non_empty[1:]).strip() or "sorry"
+
+        return lean_code
 
     def _looks_like_lean_code(self, content: str) -> bool:
         """Heuristic check for raw Lean tactic text."""

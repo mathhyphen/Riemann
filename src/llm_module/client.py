@@ -1,5 +1,6 @@
 """Base LLM client interface and configuration."""
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, Optional
@@ -9,11 +10,40 @@ from typing import Any, Dict, Generator, Optional
 class LLMConfig:
     """Configuration for LLM API calls."""
 
-    model: str = "claude-3-5-sonnet-20241022"
+    model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 4096
     api_endpoint: Optional[str] = None
     api_key: Optional[str] = None
+
+
+def resolve_llm_config(provider: Optional[str] = None) -> LLMConfig:
+    """Build an LLM configuration from environment variables."""
+
+    provider_name = provider or os.environ.get("LLM_PROVIDER")
+    endpoint = os.environ.get("LLM_API_ENDPOINT")
+
+    if not endpoint and provider_name == "openai":
+        endpoint = os.environ.get("OPENAI_BASE_URL")
+    if not endpoint and provider_name == "anthropic":
+        endpoint = os.environ.get("ANTHROPIC_BASE_URL")
+
+    api_key = os.environ.get("LLM_API_KEY")
+    if not api_key and provider_name == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key and provider_name == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    temperature_raw = os.environ.get("LLM_TEMPERATURE")
+    max_tokens_raw = os.environ.get("LLM_MAX_TOKENS")
+
+    return LLMConfig(
+        model=os.environ.get("LLM_MODEL"),
+        temperature=float(temperature_raw) if temperature_raw else 0.7,
+        max_tokens=int(max_tokens_raw) if max_tokens_raw else 4096,
+        api_endpoint=endpoint,
+        api_key=api_key,
+    )
 
 
 @dataclass(frozen=True)

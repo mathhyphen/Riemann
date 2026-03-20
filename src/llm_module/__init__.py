@@ -23,7 +23,7 @@ def LLMFactory(name: str, **kwargs) -> "LLMClient":
     return client_cls(**kwargs)
 
 
-from .client import LLMClient, LLMConfig, LLMResponse
+from .client import LLMClient, LLMConfig, LLMResponse, resolve_llm_config
 from .anthropic_client import AnthropicClient
 from .openai_client import OpenAIClient
 from .prompt_builder import ProofPromptBuilder
@@ -32,6 +32,7 @@ __all__ = [
     "LLMClient",
     "LLMConfig",
     "LLMResponse",
+    "resolve_llm_config",
     "AnthropicClient",
     "OpenAIClient",
     "LLMFactory",
