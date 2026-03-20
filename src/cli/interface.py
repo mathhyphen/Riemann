@@ -1,6 +1,8 @@
 """Command-line interface for Riemann."""
 
+import re
 import signal
+import sys
 from typing import Callable, Generator, Optional
 
 from rich import print as rprint
@@ -14,15 +16,68 @@ from rich.prompt import Confirm, Prompt
 from .formatters import OutputFormatter, ProgressFormatter
 
 
+def _safe_encode(text: str) -> str:
+    """Replace non-ASCII characters for Windows console compatibility."""
+    if sys.platform == "win32":
+        # Replace common Unicode characters with ASCII equivalents
+        replacements = {
+            '\u0151': 'o',  # Hungarian o
+            '\u00e9': 'e',  # e acute
+            '\u00f3': 'o',  # o acute
+            '\u00fc': 'u',  # u umlaut
+            '\u00e1': 'a',  # a acute
+            '\u00ed': 'i',  # i acute
+            '\u00f6': 'o',  # o umlaut
+            '\u00e4': 'a',  # a umlaut
+            '\u2200': 'forall',  # forall symbol
+            '\u2203': 'exists',  # exists symbol
+            '\u2227': 'and',  # logical and
+            '\u2228': 'or',   # logical or
+            '\u00ac': 'not',  # not symbol
+            '\u2192': '->',   # arrow
+            '\u2194': '<->',  # double arrow
+            '\u2260': '!=',   # not equal
+            '\u2264': '<=',   # less or equal
+            '\u2265': '>=',   # greater or equal
+            '\u00d7': '*',    # multiplication
+            '\u00f7': '/',    # division
+            '\u2022': '*',    # bullet point
+            '\u2023': '*',    # triangle bullet
+            '\u2043': '-',    # hyphen bullet
+            '\u2212': '-',    # minus sign
+            '\u2013': '-',    # en dash
+            '\u2014': '-',    # em dash
+            '\u2018': "'",   # left single quote
+            '\u2019': "'",   # right single quote
+            '\u201c': '"',   # left double quote
+            '\u201d': '"',   # right double quote
+            '\u00b0': 'deg',  # degree symbol
+            '\u03b1': 'alpha',  # Greek
+            '\u03b2': 'beta',
+            '\u03b3': 'gamma',
+            '\u03b4': 'delta',
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        # Remove any remaining non-ASCII characters
+        text = re.sub(r'[^\x00-\x7f]', '', text)
+    return text
+
+
 class RiemannCLI:
     """Main CLI interface for Riemann proof assistant."""
 
-    def __init__(self, verbose: bool = False):
-        self.console = Console()
+    def __init__(self, verbose: bool = False, safe_mode: bool = True):
+        # Use safe_mode=True by default on Windows to handle encoding issues
+        if safe_mode and sys.platform == "win32":
+            self.console = Console(emoji=False, markup=False)
+        else:
+            self.console = Console()
         self.formatter = OutputFormatter(self.console, verbose)
         self.progress_formatter = ProgressFormatter(self.console)
         self.verbose = verbose
         self._interrupted = False
+        self._safe_mode = safe_mode
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self) -> None:
@@ -155,3 +210,46 @@ class RiemannCLI:
 
     def display_markdown(self, content: str) -> None:
         self.console.print(Markdown(content))
+
+    def display_proof_explanation(
+        self,
+        theorem: str,
+        explanation: str,
+        source: str = "generated",
+    ) -> None:
+        """Display user-friendly proof explanation.
+
+        Args:
+            theorem: The theorem name or statement.
+            explanation: The explanation text to display.
+            source: Source of the proof ('mathlib' or 'generated').
+        """
+        self.console.print()
+        source_label = "[green]From Mathlib[/green]" if source == "mathlib" else "[cyan]Generated Explanation[/cyan]"
+        safe_theorem = _safe_encode(theorem) if self._safe_mode else theorem
+        header = Panel(
+            f"[bold]{safe_theorem}[/bold]\n{source_label}",
+            border_style="green",
+            title="[bold]Proof Explanation[/bold]",
+        )
+        self.console.print(header)
+        self.console.print()
+        safe_explanation = _safe_encode(explanation) if self._safe_mode else explanation
+        self.console.print(Markdown(safe_explanation))
+        self.console.print()
+
+    def display_mathlib_hit(self, hit: dict) -> None:
+        """Display a Mathlib theorem hit.
+
+        Args:
+            hit: Dictionary with theorem info (name, signature, source_path, etc.).
+        """
+        self.console.print()
+        info = Panel(
+            f"[bold cyan]{hit.get('name', 'Unknown')}[/bold cyan]\n"
+            f"[dim]{hit.get('signature', '')}[/dim]\n"
+            f"[dim]Source: {hit.get('source_path', 'N/A')}[/dim]",
+            border_style="cyan",
+            title="[bold]Mathlib Hit[/bold]",
+        )
+        self.console.print(info)

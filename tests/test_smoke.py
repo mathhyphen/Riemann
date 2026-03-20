@@ -1,4 +1,6 @@
 from src.agent.proof_generator import ProofGenerator
+from src.agent.proof_explainer import ProofExplainer
+from src.agent.mathlib_retriever import MathlibRetriever, MathlibTheoremHit
 from src.agent.proof_to_lean import ProofToLeanConverter
 from src.agent.state import AgentConfig, AgentContext, ErrorCategory, ProofAttempt
 from src.agent.verification_loop import VerificationLoop
@@ -11,6 +13,27 @@ from src.main import create_parser, detect_llm_provider
 class FakeLLMClient:
     def generate(self, **kwargs):
         return type("Response", (), {"content": "### Lean Code\n```lean\nrfl\n```"})()
+
+
+class FakeExplainingLLMClient:
+    def generate(self, **kwargs):
+        prompt = kwargs.get("prompt", "")
+        if "Please explain the above Lean proof" in prompt:
+            return type("Response", (), {"content": "Proof explanation"})()
+        return type(
+            "Response",
+            (),
+            {
+                "content": (
+                    "### Proof Strategy\nUse the standard library theorem.\n"
+                    "### Lean Code\n```lean\n"
+                    "theorem t (a b : Nat) : a + b = b + a :=\n"
+                    "  Nat.add_comm a b\n"
+                    "```\n"
+                    "### Explanation\nDirect reuse."
+                )
+            },
+        )()
 
 
 class FakeVerifier:
@@ -27,6 +50,34 @@ class FakeLocalVerifier:
     def verify_proof(self, code: str, timeout=None):
         del code, timeout
         return type("LocalResult", (), {"success": True, "message": "ok", "errors": []})()
+
+
+class CapturingLocalVerifier:
+    def __init__(self):
+        self.code = ""
+
+    def verify_proof(self, code: str, timeout=None):
+        del timeout
+        self.code = code
+        return type("LocalResult", (), {"success": True, "message": "ok", "errors": []})()
+
+
+class FakeMathlibRetriever:
+    def search(self, theorem_name: str, theorem_statement: str, limit: int = 3):
+        del theorem_name, theorem_statement, limit
+        return [
+            MathlibTheoremHit(
+                name="add_comm",
+                signature="theorem add_comm : a + b = b + a",
+                source_path="Mathlib/Test.lean",
+                line_number=1,
+                score=42,
+            )
+        ]
+
+    def get_proof_content(self, source_path: str, line_number: int) -> str:
+        del source_path, line_number
+        raise AssertionError("alias proof should be used before raw proof extraction")
 
 
 def test_agent_context_returns_latest_attempt() -> None:
@@ -153,3 +204,80 @@ def test_converter_strips_outer_theorem_wrapper() -> None:
 
     assert converted.count("theorem sample") == 1
     assert "simpa using Nat.add_zero n" in converted
+
+
+def test_converter_preserves_term_style_theorem_declarations() -> None:
+    converter = ProofToLeanConverter()
+
+    converted = converter.convert(
+        "```lean\nimport Mathlib\n\ntheorem comm_test (a b : Nat) : a + b = b + a :=\n  Nat.add_comm a b\n```",
+        "comm_test",
+        "forall a b : Nat, a + b = b + a",
+    )
+
+    assert converted.count("import Mathlib") == 1
+    assert converted.count("theorem comm_test") == 1
+    assert "Nat.add_comm a b" in converted
+    assert "forall a b : Nat" not in converted
+
+
+def test_verification_loop_records_successful_attempt_for_explanation() -> None:
+    loop = VerificationLoop(
+        ProofGenerator(FakeExplainingLLMClient()),
+        ProofToLeanConverter(),
+        FakeLocalVerifier(),
+        AgentConfig(max_iterations=1),
+        proof_explainer=ProofExplainer(FakeExplainingLLMClient()),
+    )
+
+    context = loop.verify("t", "forall a b : Nat, a + b = b + a")
+    explanation = loop.generate_explanation(context, language="en")
+
+    assert context.state.value == "success"
+    assert context.current_iteration == 1
+    assert context.proof_attempts[-1].was_successful is True
+    assert explanation == "Proof explanation"
+
+
+def test_mathlib_retriever_prefers_add_comm_for_addition_commutativity() -> None:
+    retriever = MathlibRetriever(mathlib_root=".")
+    retriever._index = [
+        MathlibTheoremHit(
+            name="mul_comm",
+            signature="theorem mul_comm : a * b = b * a",
+            source_path="mul.lean",
+            line_number=1,
+            score=0,
+        ),
+        MathlibTheoremHit(
+            name="add_comm",
+            signature="theorem add_comm : a + b = b + a",
+            source_path="add.lean",
+            line_number=1,
+            score=0,
+        ),
+    ]
+
+    hits = retriever.search(
+        theorem_name="user_theorem",
+        theorem_statement="forall a b : Nat, a + b = b + a",
+        limit=2,
+    )
+
+    assert [hit.name for hit in hits] == ["add_comm"]
+
+
+def test_verification_loop_reuses_mathlib_theorem_with_adapter_proof() -> None:
+    verifier = CapturingLocalVerifier()
+    loop = VerificationLoop(
+        ProofGenerator(FakeLLMClient()),
+        ProofToLeanConverter(),
+        verifier,
+        AgentConfig(max_iterations=1),
+        mathlib_retriever=FakeMathlibRetriever(),
+    )
+
+    context = loop.verify("user_theorem", "forall a b : Nat, a + b = b + a")
+
+    assert context.state.value == "success"
+    assert "simpa using add_comm a b" in verifier.code

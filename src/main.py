@@ -9,6 +9,7 @@ This module provides:
 import argparse
 import logging
 import os
+import re
 import sys
 import time
 
@@ -16,6 +17,8 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 try:
+    from .agent.mathlib_retriever import MathlibRetriever
+    from .agent.proof_explainer import ProofExplainer
     from .agent.proof_generator import ProofGenerator
     from .agent.proof_to_lean import ProofToLeanConverter
     from .agent.state import AgentConfig
@@ -25,6 +28,8 @@ try:
     from .lean_module import LeanFactory
     from .llm_module import LLMFactory, resolve_llm_config
 except ImportError:  # pragma: no cover - script execution fallback
+    from src.agent.mathlib_retriever import MathlibRetriever
+    from src.agent.proof_explainer import ProofExplainer
     from src.agent.proof_generator import ProofGenerator
     from src.agent.proof_to_lean import ProofToLeanConverter
     from src.agent.state import AgentConfig
@@ -61,6 +66,30 @@ def detect_llm_provider() -> str:
 def detect_lean_backend() -> str:
     """Select the Lean verification backend."""
     return os.environ.get("LEAN_BACKEND", "http")
+
+
+def detect_user_language(text: str) -> str:
+    """Detect if user is using Chinese or English.
+
+    Args:
+        text: User input text.
+
+    Returns:
+        'zh' for Chinese, 'en' for English.
+    """
+    # Chinese character range
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+    if chinese_pattern.search(text):
+        return "zh"
+
+    # Check for common Chinese words
+    chinese_words = ["定理", "证明", "对于", "所有", "存在", "如果", "那么", "因为", "所以"]
+    text_lower = text.lower()
+    for word in chinese_words:
+        if word in text_lower:
+            return "zh"
+
+    return "en"
 
 
 class RiemannApp:
@@ -158,6 +187,9 @@ class RiemannApp:
         """
         self.cli.display_verification_stage("initializing", "Setting up clients...")
 
+        # Detect user language for explanation
+        user_language = detect_user_language(statement)
+
         try:
             # Initialize LLM client
             provider = detect_llm_provider()
@@ -194,6 +226,10 @@ class RiemannApp:
                         "Set LEAN_API_URL to a healthy server before running proofs."
                     )
 
+            # Initialize Mathlib retriever and Proof explainer
+            mathlib_retriever = MathlibRetriever()
+            proof_explainer = ProofExplainer(llm_client, llm_config)
+
             # Initialize agent components
             proof_generator = ProofGenerator(llm_client, llm_config)
             proof_converter = ProofToLeanConverter()
@@ -206,7 +242,9 @@ class RiemannApp:
                 proof_generator=proof_generator,
                 lean_converter=proof_converter,
                 verifier_api=lean_client,
-                config=agent_config
+                config=agent_config,
+                mathlib_retriever=mathlib_retriever,
+                proof_explainer=proof_explainer,
             )
 
             self.cli.display_verification_stage("generating", "Generating proof...")
@@ -218,12 +256,29 @@ class RiemannApp:
             )
 
             if context.state.value == "success":
+                # Generate explanation for successful proof
+                explanation = verification_loop.generate_explanation(
+                    context, language=user_language
+                )
+
                 last_attempt = context.proof_attempts[-1] if context.proof_attempts else None
+                proof_source = "mathlib" if context.mathlib_proof else "generated"
+
+                # Display the explanation
+                if explanation:
+                    self.cli.display_proof_explanation(
+                        theorem=f"user_theorem : {statement}",
+                        explanation=explanation,
+                        source=proof_source,
+                    )
+
                 return {
                     "success": True,
                     "iterations": context.current_iteration,
                     "tokens": 0,
-                    "proof": last_attempt.lean_code if last_attempt else "",
+                    "proof": context.mathlib_proof or (last_attempt.lean_code if last_attempt else ""),
+                    "explanation": explanation,
+                    "source": proof_source,
                 }
             else:
                 return {
