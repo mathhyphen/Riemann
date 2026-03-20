@@ -12,7 +12,7 @@
 
 1. All cases matched the benchmark expectation.
 2. The dominant non-success diagnostic bucket was `expected_negative_case`.
-3. The suite covered 7 categories with median latency 0.0004s.
+3. The suite covered 7 categories with median latency 0.0003s.
 
 ## Failure Diagnostics
 

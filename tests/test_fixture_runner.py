@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 
 from src.agent.state import AgentConfig
@@ -9,6 +11,7 @@ from src.benchmarking.fixture_runner import (
     inspect_live_environment,
     load_cases,
     render_detailed_report,
+    render_formal_report,
     render_markdown_report,
     run_benchmark,
 )
@@ -87,6 +90,60 @@ def test_render_detailed_report_contains_diagnostics() -> None:
     assert "expected_negative_case" in report or "success" in report
 
 
+def test_render_formal_report_contains_metadata_and_caveats() -> None:
+    cases = load_cases("benchmarks/benchmark_cases.json")
+    summary = run_benchmark(cases, mode="fixture", workers=2)
+
+    report = render_formal_report(
+        summary,
+        run_metadata={
+            "generated_at": "2026-03-20 12:00:00 +0800",
+            "runner": "scripts/run_benchmark.py",
+            "cases_path": "benchmarks/benchmark_cases.json",
+            "workers": 2,
+            "categories": [],
+            "case_ids": [],
+            "limit": None,
+            "git_branch": "codex/test-report",
+            "git_commit": "abc1234",
+        },
+        output_paths={"JSON results": "reports/test.json"},
+    )
+
+    assert "# 20-Problem Benchmark Report" in report
+    assert "## Run Metadata" in report
+    assert "- Run mode: `fixture`" in report
+    assert "## Diagnostic Summary" in report
+    assert "## Pipeline Caveats" in report
+    assert "| case_17 | classically_true |" in report
+    assert "## Cases Requiring Attention" in report
+
+
+def test_render_formal_report_respects_filtered_scope() -> None:
+    cases = filter_cases(load_cases("tests/fixtures/minimal_benchmark_cases.json"), categories=["logic"], limit=1)
+    summary = run_benchmark(cases, mode="fixture")
+
+    report = render_formal_report(
+        summary,
+        run_metadata={
+            "generated_at": "2026-03-20 12:00:00 +0800",
+            "runner": "scripts/run_benchmark.py",
+            "cases_path": "tests/fixtures/minimal_benchmark_cases.json",
+            "workers": 1,
+            "categories": ["logic"],
+            "case_ids": [],
+            "limit": 1,
+            "git_branch": "codex/test-report",
+            "git_commit": "abc1234",
+        },
+    )
+
+    assert "- Problems run: `1`" in report
+    assert "- Selected categories: `logic`" in report
+    assert "| logic_true | logic | easy | pass | pass | yes |" in report
+    assert "converter_expected_failure" not in report
+
+
 def test_official_benchmark_fixture_loads_all_20_cases() -> None:
     cases = load_cases("benchmarks/benchmark_cases.json")
 
@@ -149,6 +206,39 @@ def test_run_benchmark_supports_live_mode_with_injected_clients() -> None:
     assert summary.results[0].case_id == "case_01"
 
 
+def test_render_formal_report_supports_live_mode() -> None:
+    cases = filter_cases(load_cases("benchmarks/benchmark_cases.json"), case_ids=["case_01"])
+    summary = run_benchmark(
+        cases,
+        mode="live",
+        llm_client=_FakeLiveLLM(),
+        verifier_api=_FakeLiveVerifier(),
+        config=AgentConfig(max_iterations=1, stream_output=False, verbose=False),
+    )
+
+    report = render_formal_report(
+        summary,
+        run_metadata={
+            "generated_at": "2026-03-20 12:00:00 +0800",
+            "runner": "scripts/run_benchmark.py",
+            "cases_path": "benchmarks/benchmark_cases.json",
+            "workers": 1,
+            "categories": [],
+            "case_ids": ["case_01"],
+            "limit": None,
+            "git_branch": "codex/test-report",
+            "git_commit": "abc1234",
+            "llm_provider": "anthropic",
+            "lean_api_url": "http://lean.local",
+        },
+    )
+
+    assert "- Run mode: `live`" in report
+    assert "- LLM provider: `anthropic`" in report
+    assert "- Lean API URL: `http://lean.local`" in report
+    assert "| case_01 |" in report
+
+
 def test_run_benchmark_supports_parallel_fixture_mode() -> None:
     cases = filter_cases(load_cases("benchmarks/benchmark_cases.json"), categories=["logic_basic"])
     summary = run_benchmark(cases, mode="fixture", workers=3)
@@ -156,3 +246,42 @@ def test_run_benchmark_supports_parallel_fixture_mode() -> None:
     assert summary.mode == "fixture"
     assert summary.total_cases == 4
     assert summary.passed_cases == 4
+
+
+def test_cli_writes_unified_benchmark_report(tmp_path: Path, monkeypatch) -> None:
+    script_path = Path("scripts/run_benchmark.py").resolve()
+    spec = importlib.util.spec_from_file_location("run_benchmark_script", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    json_output = tmp_path / "results.json"
+    markdown_output = tmp_path / "results.md"
+    report_output = tmp_path / "report.md"
+    benchmark_report_output = tmp_path / "benchmark_report.md"
+
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+    monkeypatch.setattr(module, "_git_value", lambda *args: "test-value")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_benchmark.py",
+            "--cases",
+            "tests/fixtures/minimal_benchmark_cases.json",
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(markdown_output),
+            "--report-output",
+            str(report_output),
+            "--benchmark-report-output",
+            str(benchmark_report_output),
+        ],
+    )
+
+    assert module.main() == 0
+    assert benchmark_report_output.exists()
+    content = benchmark_report_output.read_text(encoding="utf-8")
+    assert "# 20-Problem Benchmark Report" in content
+    assert "- Run mode: `fixture`" in content

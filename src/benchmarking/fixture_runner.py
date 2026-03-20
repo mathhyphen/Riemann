@@ -780,3 +780,187 @@ def render_detailed_report(summary: FixtureBenchmarkSummary) -> str:
         lines.append("| - | - | - | No attention needed |")
 
     return "\n".join(lines) + "\n"
+
+
+def render_formal_report(
+    summary: FixtureBenchmarkSummary,
+    *,
+    run_metadata: dict[str, Any] | None = None,
+    output_paths: dict[str, str] | None = None,
+) -> str:
+    """Render a unified formal benchmark report with metadata and diagnostics."""
+
+    run_metadata = run_metadata or {}
+    output_paths = output_paths or {}
+
+    categories = run_metadata.get("categories") or []
+    case_ids = run_metadata.get("case_ids") or []
+    limit = run_metadata.get("limit")
+
+    lines = [
+        "# 20-Problem Benchmark Report",
+        "",
+        "## Run Metadata",
+        "",
+        f"- Run mode: `{summary.mode}`",
+        f"- Generated at: `{run_metadata.get('generated_at', 'unknown')}`",
+        f"- Runner: `{run_metadata.get('runner', 'unknown')}`",
+        f"- Case source: `{run_metadata.get('cases_path', 'unknown')}`",
+        f"- Worker count: `{run_metadata.get('workers', 'unknown')}`",
+        f"- Git branch: `{run_metadata.get('git_branch', 'unknown')}`",
+        f"- Git commit: `{run_metadata.get('git_commit', 'unknown')}`",
+        f"- Selected categories: `{', '.join(categories) if categories else 'all'}`",
+        f"- Selected case ids: `{', '.join(case_ids) if case_ids else 'all'}`",
+        f"- Limit: `{limit if limit is not None else 'none'}`",
+    ]
+
+    if summary.mode == "live":
+        lines.append(f"- LLM provider: `{run_metadata.get('llm_provider', 'unknown')}`")
+        lines.append(f"- Lean API URL: `{run_metadata.get('lean_api_url', 'unknown')}`")
+    else:
+        lines.append("- Notes: `fixture mode validates pipeline behavior without live dependencies.`")
+
+    if output_paths:
+        lines.extend(["", "## Output Artifacts", ""])
+        for label, path in output_paths.items():
+            lines.append(f"- {label}: `{path}`")
+
+    attention_results = [
+        result for result in summary.results if not result.actual_success or not result.passed_expectation
+    ]
+    caveat_results = [
+        result for result in summary.results if _classify_diagnostic(result) == "pipeline_caveat"
+    ]
+
+    lines.extend(
+        [
+            "",
+            "## Executive Summary",
+            "",
+            f"- Problems run: `{summary.total_cases}`",
+            f"- Matched expectation: `{summary.passed_cases}`",
+            f"- Mismatched expectation: `{summary.failed_cases}`",
+            f"- Expected successes: `{summary.expected_successes}`",
+            f"- Actual successes: `{summary.actual_successes}`",
+            f"- Cases needing attention: `{len(attention_results)}`",
+            f"- Pipeline caveat cases: `{len(caveat_results)}`",
+            f"- Theorem truth breakdown: `{summary.truth_breakdown}`",
+            f"- Diagnostic breakdown: `{summary.diagnostic_breakdown}`",
+            f"- Median latency: `{summary.median_duration_seconds:.4f}s`",
+            "",
+            "## Per-Category Summary",
+            "",
+            "| Category | Total | Matched | Actual Success |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+    )
+
+    for category, counts in sorted(summary.category_breakdown.items()):
+        lines.append(
+            f"| {category} | {counts['total']} | {counts['matched_expectation']} | {counts['actual_success']} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Diagnostic Summary",
+            "",
+            "| Diagnostic | Count |",
+            "| --- | ---: |",
+        ]
+    )
+
+    for label, count in sorted(summary.diagnostic_breakdown.items()):
+        lines.append(f"| {label} | {count} |")
+
+    lines.extend(
+        [
+            "",
+            "## Cases Requiring Attention",
+            "",
+            "| Case | Category | Theorem Truth | Diagnostic | State | Error |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+
+    if attention_results:
+        for result in attention_results:
+            lines.append(
+                "| {case} | {category} | {truth} | {diagnostic} | {state} | {error} |".format(
+                    case=result.case_id,
+                    category=result.category,
+                    truth=result.theorem_truth,
+                    diagnostic=_classify_diagnostic(result),
+                    state=result.state,
+                    error=(result.error or "-").replace("|", "/"),
+                )
+            )
+    else:
+        lines.append("| - | - | - | success | - | No attention needed |")
+
+    lines.extend(
+        [
+            "",
+            "## Pipeline Caveats",
+            "",
+            "| Case | Theorem Truth | Notes |",
+            "| --- | --- | --- |",
+        ]
+    )
+
+    if caveat_results:
+        for result in caveat_results:
+            lines.append(
+                f"| {result.case_id} | {result.theorem_truth} | {(result.notes or result.error or '-').replace('|', '/')} |"
+            )
+    else:
+        lines.append("| - | - | No pipeline caveats in this run |")
+
+    lines.extend(
+        [
+            "",
+            "## Case Results",
+            "",
+            "| Case | Category | Difficulty | Expected Pipeline | Actual | Match |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+
+    for result in summary.results:
+        lines.append(
+            "| {case} | {category} | {difficulty} | {expected} | {actual} | {match} |".format(
+                case=result.case_id,
+                category=result.category,
+                difficulty=result.difficulty,
+                expected="pass" if result.expected_success else "fail",
+                actual="pass" if result.actual_success else "fail",
+                match="yes" if result.passed_expectation else "no",
+            )
+        )
+
+    recommendations: list[str] = []
+    if summary.diagnostic_breakdown.get("pipeline_caveat", 0):
+        recommendations.append(
+            "Keep theorem truth and expected pipeline outcome separate when interpreting caveat cases."
+        )
+    if summary.diagnostic_breakdown.get("needs_classical_reasoning", 0):
+        recommendations.append(
+            "Add explicit classical reasoning support for cases that are only classically provable."
+        )
+    if summary.diagnostic_breakdown.get("unexpected_failure", 0):
+        recommendations.append(
+            "Investigate unexpected failures before treating benchmark regressions as acceptable."
+        )
+    if summary.mode == "fixture":
+        recommendations.append(
+            "Follow up with a live run against a real Lean verifier before claiming end-to-end proof capability."
+        )
+
+    lines.extend(["", "## Recommendations", ""])
+    if recommendations:
+        for index, recommendation in enumerate(recommendations, start=1):
+            lines.append(f"{index}. {recommendation}")
+    else:
+        lines.append("1. No additional follow-up is required based on this run.")
+
+    return "\n".join(lines) + "\n"

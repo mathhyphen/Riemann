@@ -78,6 +78,7 @@ Useful flags:
 - `--workers <n>` to parallelize case execution
 - `--jsonl-output <path>` for one-result-per-line output
 - `--report-output <path>` for a richer Markdown summary
+- `--benchmark-report-output <path>` for the unified formal benchmark report
 
 ## Notes
 

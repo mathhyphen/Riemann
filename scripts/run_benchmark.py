@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,8 +14,10 @@ from src.benchmarking.fixture_runner import (
     BenchmarkEnvironmentError,
     create_live_runtime,
     filter_cases,
+    inspect_live_environment,
     load_cases,
     render_detailed_report,
+    render_formal_report,
     render_markdown_report,
     run_benchmark,
     summary_to_dict,
@@ -92,6 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--report-output",
         help="Path to write a detailed Markdown report.",
     )
+    parser.add_argument(
+        "--benchmark-report-output",
+        help="Path to write the unified formal benchmark report.",
+    )
     return parser
 
 
@@ -105,7 +113,50 @@ def _default_output_path(kind: str, mode: str) -> str:
         return f"reports/20_problem_{suffix}_results.md"
     if kind == "report":
         return f"reports/20_problem_{suffix}_report.md"
+    if kind == "benchmark_report":
+        return "reports/20_problem_benchmark_report.md"
     raise ValueError(f"Unknown output kind: {kind}")
+
+
+def _git_value(*args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
+
+
+def _build_run_metadata(
+    args: argparse.Namespace,
+    *,
+    live_environment: dict[str, object] | None = None,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "generated_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+        "runner": "scripts/run_benchmark.py",
+        "cases_path": args.cases,
+        "workers": args.workers,
+        "categories": list(args.category),
+        "case_ids": list(args.case_id),
+        "limit": args.limit,
+        "git_branch": _git_value("rev-parse", "--abbrev-ref", "HEAD"),
+        "git_commit": _git_value("rev-parse", "--short", "HEAD"),
+    }
+    if args.mode == "live":
+        metadata["llm_provider"] = (
+            live_environment.get("llm_provider", "unknown") if live_environment else (args.llm_provider or "auto")
+        )
+        metadata["lean_api_url"] = (
+            live_environment.get("lean_api_url", "unknown") if live_environment else (args.lean_api_url or "auto")
+        )
+        metadata["max_iterations"] = args.max_iterations
+        metadata["timeout_seconds"] = args.timeout_seconds
+    return metadata
 
 
 def _write_json(path: str, payload: dict) -> Path:
@@ -148,10 +199,16 @@ def main() -> int:
     if not cases:
         raise SystemExit("No benchmark cases matched the requested filters.")
 
+    live_environment = None
     if args.mode == "fixture":
         summary = run_benchmark(cases, mode="fixture", workers=args.workers)
     else:
         try:
+            live_environment = inspect_live_environment(
+                lean_api_url=args.lean_api_url,
+                llm_provider=args.llm_provider,
+            )
+
             def runtime_factory():
                 return create_live_runtime(
                     max_iterations=args.max_iterations,
@@ -189,6 +246,20 @@ def main() -> int:
     if args.jsonl_output:
         jsonl_path = _write_jsonl(args.jsonl_output, payload["results"])
 
+    output_paths = {
+        "JSON results": str(json_path),
+        "Markdown results": str(markdown_path),
+        "Detailed report": str(report_path),
+    }
+    if jsonl_path is not None:
+        output_paths["JSONL results"] = str(jsonl_path)
+
+    run_metadata = _build_run_metadata(args, live_environment=live_environment)
+    benchmark_report_path = _write_markdown(
+        args.benchmark_report_output or _default_output_path("benchmark_report", args.mode),
+        render_formal_report(summary, run_metadata=run_metadata, output_paths=output_paths),
+    )
+
     print(f"Mode: {summary.mode}")
     print(f"Cases: {summary.total_cases}")
     print(f"Matched expectation: {summary.passed_cases}")
@@ -198,6 +269,7 @@ def main() -> int:
     print(f"JSON: {json_path}")
     print(f"Markdown: {markdown_path}")
     print(f"Report: {report_path}")
+    print(f"Benchmark report: {benchmark_report_path}")
     if jsonl_path is not None:
         print(f"JSONL: {jsonl_path}")
     return 0
