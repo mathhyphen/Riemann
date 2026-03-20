@@ -34,6 +34,7 @@ class BenchmarkCase:
     difficulty: str
     theorem_name: str
     theorem_statement: str
+    theorem_truth: str
     llm_response: str
     expectation: BenchmarkExpectation
     notes: str = ""
@@ -48,6 +49,7 @@ class BenchmarkResult:
     difficulty: str
     theorem_name: str
     theorem_statement: str
+    theorem_truth: str
     expected_success: bool
     actual_success: bool
     passed_expectation: bool
@@ -68,6 +70,7 @@ class FixtureBenchmarkSummary:
     failed_cases: int
     expected_successes: int
     actual_successes: int
+    truth_breakdown: dict[str, int]
     median_duration_seconds: float
     category_breakdown: dict[str, dict[str, int]]
     results: list[BenchmarkResult]
@@ -135,6 +138,7 @@ def _parse_case(raw_case: dict[str, Any]) -> BenchmarkCase:
         difficulty=raw_case["difficulty"],
         theorem_name=raw_case["theorem_name"],
         theorem_statement=raw_case["theorem_statement"],
+        theorem_truth=raw_case.get("theorem_truth", "unknown"),
         llm_response=raw_case["llm_response"],
         expectation=expectation,
         notes=raw_case.get("notes", ""),
@@ -266,7 +270,8 @@ def _simple_case_catalog() -> dict[str, dict[str, Any]]:
 def _expand_simple_case(raw_case: dict[str, Any]) -> BenchmarkCase:
     catalog = _simple_case_catalog()
     fixture = catalog[raw_case["id"]]
-    expected_success = raw_case["expected_outcome"] == "success"
+    expected_outcome = raw_case.get("expected_pipeline_outcome", raw_case.get("expected_outcome"))
+    expected_success = expected_outcome == "success"
     theorem_name = raw_case["id"]
     theorem_statement = raw_case["statement"]
     theorem_line = f"theorem {theorem_name} : {theorem_statement} := by"
@@ -284,6 +289,7 @@ def _expand_simple_case(raw_case: dict[str, Any]) -> BenchmarkCase:
         difficulty=fixture["difficulty"],
         theorem_name=theorem_name,
         theorem_statement=theorem_statement,
+        theorem_truth=raw_case.get("theorem_truth", "unknown"),
         llm_response=fixture["llm_response"],
         expectation=expectation,
         notes=fixture.get("notes", raw_case.get("rationale", "")),
@@ -322,6 +328,7 @@ def _run_case(case: BenchmarkCase) -> BenchmarkResult:
         difficulty=case.difficulty,
         theorem_name=case.theorem_name,
         theorem_statement=case.theorem_statement,
+        theorem_truth=case.theorem_truth,
         expected_success=case.expectation.success,
         actual_success=actual_success,
         passed_expectation=passed_expectation,
@@ -347,6 +354,13 @@ def _build_category_breakdown(results: list[BenchmarkResult]) -> dict[str, dict[
     return breakdown
 
 
+def _build_truth_breakdown(results: list[BenchmarkResult]) -> dict[str, int]:
+    breakdown: dict[str, int] = {}
+    for result in results:
+        breakdown[result.theorem_truth] = breakdown.get(result.theorem_truth, 0) + 1
+    return breakdown
+
+
 def run_benchmark(cases: list[BenchmarkCase]) -> FixtureBenchmarkSummary:
     """Run a fixture benchmark suite."""
 
@@ -361,6 +375,7 @@ def run_benchmark(cases: list[BenchmarkCase]) -> FixtureBenchmarkSummary:
         failed_cases=len(results) - passed_cases,
         expected_successes=expected_successes,
         actual_successes=actual_successes,
+        truth_breakdown=_build_truth_breakdown(results),
         median_duration_seconds=median(result.duration_seconds for result in results),
         category_breakdown=_build_category_breakdown(results),
         results=results,
@@ -376,6 +391,7 @@ def summary_to_dict(summary: FixtureBenchmarkSummary) -> dict[str, Any]:
         "failed_cases": summary.failed_cases,
         "expected_successes": summary.expected_successes,
         "actual_successes": summary.actual_successes,
+        "truth_breakdown": summary.truth_breakdown,
         "median_duration_seconds": summary.median_duration_seconds,
         "category_breakdown": summary.category_breakdown,
         "results": [asdict(result) for result in summary.results],
@@ -393,6 +409,7 @@ def render_markdown_report(summary: FixtureBenchmarkSummary) -> str:
         f"- Mismatched expectation: {summary.failed_cases}",
         f"- Expected successes: {summary.expected_successes}",
         f"- Actual successes: {summary.actual_successes}",
+        f"- Truth breakdown: {summary.truth_breakdown}",
         f"- Median latency: {summary.median_duration_seconds:.4f}s",
         "",
         "## By Category",
@@ -411,17 +428,18 @@ def render_markdown_report(summary: FixtureBenchmarkSummary) -> str:
             "",
             "## Case Results",
             "",
-            "| Case | Category | Difficulty | Expected | Actual | Match | Notes |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| Case | Category | Difficulty | Theorem Truth | Expected Pipeline | Actual | Match | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
 
     for result in summary.results:
         lines.append(
-            "| {case} | {category} | {difficulty} | {expected} | {actual} | {match} | {notes} |".format(
+            "| {case} | {category} | {difficulty} | {truth} | {expected} | {actual} | {match} | {notes} |".format(
                 case=result.case_id,
                 category=result.category,
                 difficulty=result.difficulty,
+                truth=result.theorem_truth,
                 expected="pass" if result.expected_success else "fail",
                 actual="pass" if result.actual_success else "fail",
                 match="yes" if result.passed_expectation else "no",

@@ -11,12 +11,13 @@ The cases are balanced across:
 
 Use `benchmark_cases.json` as the canonical fixture source. Each entry includes:
 - `statement`: the theorem to evaluate
-- `expected_outcome`: `success` or `failure`
+- `theorem_truth`: whether the proposition is mathematically true, false, or only classically true
+- `expected_pipeline_outcome`: `success` or `failure` for this offline benchmark
 - `rationale`: a short reason for the expected outcome
 
 The intent is to keep these cases stable so future runs can compare behavior over time.
 
 Important caveat:
 
-- In fixture mode, `expected_outcome` means the expected pipeline result for this benchmark, not necessarily the theorem's absolute truth value under a real Lean checker.
+- In fixture mode, `expected_pipeline_outcome` is not the same thing as theorem truth under a real Lean checker.
 - `case_17` and `case_18` are intentionally useful examples of this distinction: they are reasonable "current pipeline may fail" cases, but they are not mathematical impossibilities in Lean.

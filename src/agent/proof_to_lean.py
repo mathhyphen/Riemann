@@ -95,8 +95,9 @@ class ProofToLeanConverter:
             lean_code = normalized_content
 
         if not lean_code:
-            logger.warning("No Lean code found in content, attempting extraction")
             lean_code = self._extract_proof_steps(normalized_content)
+            if lean_code == "sorry":
+                logger.warning("No Lean code found in content, attempting extraction")
 
         if not lean_code:
             logger.warning("Could not extract proof, using theorem only")

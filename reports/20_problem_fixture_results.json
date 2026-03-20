@@ -4,7 +4,12 @@
   "failed_cases": 0,
   "expected_successes": 10,
   "actual_successes": 10,
-  "median_duration_seconds": 0.00014464999549090862,
+  "truth_breakdown": {
+    "true": 11,
+    "false": 8,
+    "classically_true": 1
+  },
+  "median_duration_seconds": 0.00010294991079717875,
   "category_breakdown": {
     "nat_identity": {
       "total": 5,
@@ -27,8 +32,13 @@
       "actual_success": 0
     },
     "logic_false": {
-      "total": 3,
-      "matched_expectation": 3,
+      "total": 1,
+      "matched_expectation": 1,
+      "actual_success": 0
+    },
+    "logic_caveat": {
+      "total": 2,
+      "matched_expectation": 2,
       "actual_success": 0
     },
     "existential_false": {
@@ -44,6 +54,7 @@
       "difficulty": "easy",
       "theorem_name": "case_01",
       "theorem_statement": "forall n : Nat, n + 0 = n",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -51,7 +62,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_01 : forall n : Nat, n + 0 = n := by\n  intro n\n  simpa using Nat.add_zero n\n",
-      "duration_seconds": 0.000337099889293313,
+      "duration_seconds": 0.0002066998276859522,
       "notes": "Canonical right-identity of addition on naturals."
     },
     {
@@ -60,6 +71,7 @@
       "difficulty": "easy",
       "theorem_name": "case_02",
       "theorem_statement": "forall n : Nat, 0 + n = n",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -67,7 +79,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_02 : forall n : Nat, 0 + n = n := by\n  intro n\n  simpa using Nat.zero_add n\n",
-      "duration_seconds": 0.00012729992158710957,
+      "duration_seconds": 7.770000956952572e-05,
       "notes": "Canonical left-identity of addition on naturals."
     },
     {
@@ -76,6 +88,7 @@
       "difficulty": "easy",
       "theorem_name": "case_03",
       "theorem_statement": "forall n : Nat, n * 1 = n",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -83,7 +96,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_03 : forall n : Nat, n * 1 = n := by\n  intro n\n  simpa using Nat.mul_one n\n",
-      "duration_seconds": 0.00010819989256560802,
+      "duration_seconds": 5.7300087064504623e-05,
       "notes": "Simple multiplicative identity."
     },
     {
@@ -92,6 +105,7 @@
       "difficulty": "easy",
       "theorem_name": "case_04",
       "theorem_statement": "forall n : Nat, 1 * n = n",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -99,7 +113,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_04 : forall n : Nat, 1 * n = n := by\n  intro n\n  simpa using Nat.one_mul n\n",
-      "duration_seconds": 0.00010179984383285046,
+      "duration_seconds": 5.330005660653114e-05,
       "notes": "Simple multiplicative identity on the left."
     },
     {
@@ -108,6 +122,7 @@
       "difficulty": "easy",
       "theorem_name": "case_05",
       "theorem_statement": "forall n : Nat, n - n = 0",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -115,7 +130,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_05 : forall n : Nat, n - n = 0 := by\n  intro n\n  simpa using Nat.sub_self n\n",
-      "duration_seconds": 9.659980423748493e-05,
+      "duration_seconds": 5.570007488131523e-05,
       "notes": "Standard subtraction simplification on naturals."
     },
     {
@@ -124,6 +139,7 @@
       "difficulty": "easy",
       "theorem_name": "case_06",
       "theorem_statement": "forall a b c : Nat, a + (b + c) = (a + b) + c",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -131,7 +147,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_06 : forall a b c : Nat, a + (b + c) = (a + b) + c := by\n  intro a b c\n  simpa [Nat.add_assoc]\n",
-      "duration_seconds": 9.909993968904018e-05,
+      "duration_seconds": 4.630000330507755e-05,
       "notes": "Associativity is a basic algebraic rewrite."
     },
     {
@@ -140,6 +156,7 @@
       "difficulty": "easy",
       "theorem_name": "case_07",
       "theorem_statement": "forall P : Prop, P -> P",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -147,7 +164,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_07 : forall P : Prop, P -> P := by\n  intro P h\n  exact h\n",
-      "duration_seconds": 9.26000066101551e-05,
+      "duration_seconds": 4.309997893869877e-05,
       "notes": "Direct implication introduction and reuse."
     },
     {
@@ -156,6 +173,7 @@
       "difficulty": "easy",
       "theorem_name": "case_08",
       "theorem_statement": "forall P Q : Prop, P -> Q -> P /\\ Q",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -163,7 +181,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_08 : forall P Q : Prop, P -> Q -> P /\\ Q := by\n  intro P Q hP hQ\n  exact And.intro hP hQ\n",
-      "duration_seconds": 0.00038059987127780914,
+      "duration_seconds": 0.00010399986058473587,
       "notes": "Straightforward conjunction construction."
     },
     {
@@ -172,6 +190,7 @@
       "difficulty": "easy",
       "theorem_name": "case_09",
       "theorem_statement": "forall P Q : Prop, P /\\ Q -> Q /\\ P",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -179,7 +198,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_09 : forall P Q : Prop, P /\\ Q -> Q /\\ P := by\n  intro P Q h\n  exact And.intro h.right h.left\n",
-      "duration_seconds": 0.0001050999853760004,
+      "duration_seconds": 4.970002919435501e-05,
       "notes": "Commutativity of conjunction by unpacking assumptions."
     },
     {
@@ -188,6 +207,7 @@
       "difficulty": "easy",
       "theorem_name": "case_10",
       "theorem_statement": "forall P Q : Prop, P -> Q -> P \\/ Q",
+      "theorem_truth": "true",
       "expected_success": true,
       "actual_success": true,
       "passed_expectation": true,
@@ -195,7 +215,7 @@
       "iterations": 0,
       "error": "",
       "lean_code": "import Mathlib\n\ntheorem case_10 : forall P Q : Prop, P -> Q -> P \\/ Q := by\n  intro P Q hP hQ\n  exact Or.inl hP\n",
-      "duration_seconds": 8.769985288381577e-05,
+      "duration_seconds": 4.4899992644786835e-05,
       "notes": "Immediate disjunction introduction."
     },
     {
@@ -204,6 +224,7 @@
       "difficulty": "medium",
       "theorem_name": "case_11",
       "theorem_statement": "forall n : Nat, n = n + 1",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -211,7 +232,7 @@
       "iterations": 1,
       "error": "False for all naturals except no cases; impossible as stated.",
       "lean_code": "import Mathlib\n\ntheorem case_11 : forall n : Nat, n = n + 1 := by\n  intro n\n  omega\n",
-      "duration_seconds": 0.0009975000284612179,
+      "duration_seconds": 0.0006673999596387148,
       "notes": "False for all naturals except no cases; impossible as stated."
     },
     {
@@ -220,6 +241,7 @@
       "difficulty": "medium",
       "theorem_name": "case_12",
       "theorem_statement": "forall n : Nat, n < n",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -227,7 +249,7 @@
       "iterations": 1,
       "error": "Strict inequality is irreflexive on naturals.",
       "lean_code": "import Mathlib\n\ntheorem case_12 : forall n : Nat, n < n := by\n  intro n\n  omega\n",
-      "duration_seconds": 0.0002259998582303524,
+      "duration_seconds": 0.00012780004180967808,
       "notes": "Strict inequality is irreflexive on naturals."
     },
     {
@@ -236,6 +258,7 @@
       "difficulty": "medium",
       "theorem_name": "case_13",
       "theorem_statement": "forall n : Nat, n = 0",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -243,7 +266,7 @@
       "iterations": 1,
       "error": "Only true for zero, so the universal claim is false.",
       "lean_code": "import Mathlib\n\ntheorem case_13 : forall n : Nat, n = 0 := by\n  intro n\n  rfl\n",
-      "duration_seconds": 0.0001675998792052269,
+      "duration_seconds": 0.00011090002954006195,
       "notes": "Only true for zero, so the universal claim is false."
     },
     {
@@ -252,6 +275,7 @@
       "difficulty": "medium",
       "theorem_name": "case_14",
       "theorem_statement": "forall a b : Nat, a + b = a",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -259,7 +283,7 @@
       "iterations": 1,
       "error": "Fails whenever b is nonzero.",
       "lean_code": "import Mathlib\n\ntheorem case_14 : forall a b : Nat, a + b = a := by\n  intro a b\n  omega\n",
-      "duration_seconds": 0.00015409989282488823,
+      "duration_seconds": 0.00011019990779459476,
       "notes": "Fails whenever b is nonzero."
     },
     {
@@ -268,6 +292,7 @@
       "difficulty": "medium",
       "theorem_name": "case_15",
       "theorem_statement": "forall a b : Nat, a * b = 0",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -275,7 +300,7 @@
       "iterations": 1,
       "error": "Fails for positive inputs such as a = 1 and b = 1.",
       "lean_code": "import Mathlib\n\ntheorem case_15 : forall a b : Nat, a * b = 0 := by\n  intro a b\n  omega\n",
-      "duration_seconds": 0.0001463999506086111,
+      "duration_seconds": 0.0001129999291151762,
       "notes": "Fails for positive inputs such as a = 1 and b = 1."
     },
     {
@@ -284,6 +309,7 @@
       "difficulty": "medium",
       "theorem_name": "case_16",
       "theorem_statement": "forall P Q : Prop, (P -> Q) -> P -> ~Q",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -291,39 +317,41 @@
       "iterations": 1,
       "error": "Contradicts the assumption that P implies Q.",
       "lean_code": "import Mathlib\n\ntheorem case_16 : forall P Q : Prop, (P -> Q) -> P -> ~Q := by\n  intro P Q hPQ hP hQ\n  exact hQ (hPQ hP)\n",
-      "duration_seconds": 0.00016080006025731564,
+      "duration_seconds": 0.00011000013910233974,
       "notes": "Contradicts the assumption that P implies Q."
     },
     {
       "case_id": "case_17",
-      "category": "logic_false",
+      "category": "logic_caveat",
       "difficulty": "medium",
       "theorem_name": "case_17",
       "theorem_statement": "forall P : Prop, P \\/ ~P",
+      "theorem_truth": "classically_true",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
       "state": "max_iterations",
       "iterations": 1,
-      "error": "Requires classical reasoning and is not a constructive default proof goal.",
+      "error": "Useful expected pipeline failure without explicit classical handling.",
       "lean_code": "import Mathlib\n\ntheorem case_17 : forall P : Prop, P \\/ ~P := by\n  intro P\n  exact Classical.em P\n",
-      "duration_seconds": 0.0001656000968068838,
+      "duration_seconds": 0.00010249996557831764,
       "notes": "Semantically provable with classical reasoning, but benchmark expects failure."
     },
     {
       "case_id": "case_18",
-      "category": "logic_false",
+      "category": "logic_caveat",
       "difficulty": "medium",
       "theorem_name": "case_18",
       "theorem_statement": "forall P Q : Prop, P -> ~P -> Q",
+      "theorem_truth": "true",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
       "state": "max_iterations",
       "iterations": 1,
-      "error": "The premise is inconsistent, but proving arbitrary Q still requires explosion handling.",
+      "error": "Useful expected pipeline failure even though the theorem is provable by explosion.",
       "lean_code": "import Mathlib\n\ntheorem case_18 : forall P Q : Prop, P -> ~P -> Q := by\n  intro P Q hP hnP\n  exact False.elim (hnP hP)\n",
-      "duration_seconds": 0.00014290004037320614,
+      "duration_seconds": 0.00011730007827281952,
       "notes": "Semantically provable by explosion, but benchmark expects failure."
     },
     {
@@ -332,6 +360,7 @@
       "difficulty": "medium",
       "theorem_name": "case_19",
       "theorem_statement": "exists n : Nat, n = n + 1",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -339,7 +368,7 @@
       "iterations": 1,
       "error": "No natural number satisfies this equality.",
       "lean_code": "import Mathlib\n\ntheorem case_19 : exists n : Nat, n = n + 1 := by\n  refine Exists.intro 0 ?_\n  omega\n",
-      "duration_seconds": 0.0001634999644011259,
+      "duration_seconds": 0.00010339985601603985,
       "notes": "No natural number satisfies this equality."
     },
     {
@@ -348,6 +377,7 @@
       "difficulty": "medium",
       "theorem_name": "case_20",
       "theorem_statement": "forall a b : Nat, a = b",
+      "theorem_truth": "false",
       "expected_success": false,
       "actual_success": false,
       "passed_expectation": true,
@@ -355,7 +385,7 @@
       "iterations": 1,
       "error": "The universal equality is false because distinct naturals need not be equal.",
       "lean_code": "import Mathlib\n\ntheorem case_20 : forall a b : Nat, a = b := by\n  intro a b\n  rfl\n",
-      "duration_seconds": 0.00012360000982880592,
+      "duration_seconds": 9.700004011392593e-05,
       "notes": "The universal equality is false because distinct naturals need not be equal."
     }
   ]

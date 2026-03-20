@@ -71,4 +71,5 @@ def test_official_benchmark_fixture_loads_all_20_cases() -> None:
 
     assert len(cases) == 20
     assert sum(case.expectation.success for case in cases) == 10
+    assert sum(case.theorem_truth == "false" for case in cases) == 8
     assert any(case.case_id == "case_17" for case in cases)
