@@ -71,6 +71,9 @@ class AgentContext:
     current_iteration: int = 0
     state: ProofState = ProofState.IDLE
     error_history: List[Dict] = field(default_factory=list)
+    mathlib_proof: Optional[str] = None
+    mathlib_source: Optional[str] = None
+    explanation: Optional[str] = None
 
     @property
     def current_proof_attempt(self) -> Optional[ProofAttempt]:

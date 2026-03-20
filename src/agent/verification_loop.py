@@ -14,6 +14,8 @@ from .state import (
 )
 from .proof_generator import ProofGenerator
 from .proof_to_lean import ProofToLeanConverter
+from .mathlib_retriever import MathlibRetriever
+from .proof_explainer import ProofExplainer
 from ..lean_api import LeanRequest, LeanValidationError
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,7 @@ class VerificationResult:
 
     success: bool
     lean_code: str
+    proof_idea: str = ""
     error_message: Optional[str] = None
     error_category: Optional[ErrorCategory] = None
     message: str = ""
@@ -79,6 +82,9 @@ class VerificationLoop:
             r"exceeded time",
         ],
     }
+    FORALL_BINDER_PATTERN = re.compile(
+        r"^\s*forall\s+([A-Za-z0-9_'\s]+)\s*:\s*([^,]+),\s*(.*)$"
+    )
 
     def __init__(
         self,
@@ -86,6 +92,8 @@ class VerificationLoop:
         lean_converter: ProofToLeanConverter,
         verifier_api: Any,
         config: Optional[AgentConfig] = None,
+        mathlib_retriever: Optional[MathlibRetriever] = None,
+        proof_explainer: Optional[ProofExplainer] = None,
     ):
         """Initialize verification loop.
 
@@ -94,11 +102,15 @@ class VerificationLoop:
             lean_converter: Proof to Lean converter
             verifier_api: API client for Lean verification
             config: Agent configuration
+            mathlib_retriever: Optional retriever for Mathlib theorems
+            proof_explainer: Optional explainer for proof explanations
         """
         self.proof_generator = proof_generator
         self.lean_converter = lean_converter
         self.verifier_api = verifier_api
         self.config = config or AgentConfig()
+        self.mathlib_retriever = mathlib_retriever
+        self.proof_explainer = proof_explainer
 
     def verify(
         self,
@@ -122,11 +134,29 @@ class VerificationLoop:
 
         logger.info(f"Starting verification for: {theorem_name}")
 
+        # First, check Mathlib for existing proof
+        mathlib_hit = self._check_mathlib(theorem_name, theorem_statement)
+        if mathlib_hit:
+            context.mathlib_proof = mathlib_hit.get("proof", "")
+            context.mathlib_source = mathlib_hit.get("source_path", "")
+
+            # Verify the Mathlib proof directly
+            if context.mathlib_proof:
+                verification_response = self._submit_verification(
+                    context.mathlib_proof, context
+                )
+                if verification_response.get("success"):
+                    logger.info(f"Mathlib proof verified successfully: {theorem_name}")
+                    context.update_state(ProofState.SUCCESS)
+                    return context
+
+        # Proceed with normal LLM generation flow if Mathlib not found or verification failed
         while context.can_continue:
             try:
                 result = self._single_iteration(context)
 
                 if result.success:
+                    self._record_successful_attempt(context, result)
                     context.update_state(ProofState.SUCCESS)
                     logger.info(f"Proof verified successfully: {theorem_name}")
                     break
@@ -178,6 +208,7 @@ class VerificationLoop:
                 yield {"state": "verified", "result": result}
 
                 if result.success:
+                    self._record_successful_attempt(context, result)
                     yield {"state": "completed", "success": True}
                     break
 
@@ -222,6 +253,7 @@ class VerificationLoop:
             return VerificationResult(
                 success=True,
                 lean_code=lean_code,
+                proof_idea=proof_result.get("strategy", ""),
                 message="Proof verified successfully",
             )
 
@@ -231,6 +263,7 @@ class VerificationLoop:
         return VerificationResult(
             success=False,
             lean_code=lean_code,
+            proof_idea=proof_result.get("strategy", ""),
             error_message=error_msg,
             error_category=error_category,
         )
@@ -375,6 +408,19 @@ class VerificationLoop:
                 "Code-level error, will attempt fix"
             )
 
+    def _record_successful_attempt(
+        self, context: AgentContext, result: VerificationResult
+    ) -> None:
+        """Persist successful Lean code so later explanation can reuse it."""
+
+        attempt = ProofAttempt(
+            attempt_number=context.current_iteration + 1,
+            proof_idea=result.proof_idea,
+            lean_code=result.lean_code,
+            was_successful=True,
+        )
+        context.add_proof_attempt(attempt)
+
     def _should_reset_proof(self, error_category: Optional[ErrorCategory]) -> bool:
         """Determine if proof strategy should be reset.
 
@@ -393,3 +439,144 @@ class VerificationLoop:
         }
 
         return error_category in proof_idea_errors
+
+    def _check_mathlib(
+        self,
+        theorem_name: str,
+        theorem_statement: str,
+    ) -> Optional[dict]:
+        """Check if theorem exists in Mathlib.
+
+        Args:
+            theorem_name: Name of the theorem.
+            theorem_statement: Statement of the theorem.
+
+        Returns:
+            Dictionary with theorem info and proof if found, None otherwise.
+        """
+        if not self.mathlib_retriever:
+            return None
+
+        try:
+            hits = self.mathlib_retriever.search(
+                theorem_name=theorem_name,
+                theorem_statement=theorem_statement,
+                limit=3,
+            )
+
+            if not hits:
+                return None
+
+            for hit in hits:
+                proof_content = self._build_mathlib_alias_proof(
+                    theorem_name=theorem_name,
+                    theorem_statement=theorem_statement,
+                    library_theorem=hit.name,
+                )
+                if not proof_content:
+                    proof_content = self.mathlib_retriever.get_proof_content(
+                        source_path=hit.source_path,
+                        line_number=hit.line_number,
+                    )
+
+                if proof_content:
+                    return {
+                        "name": hit.name,
+                        "signature": hit.signature,
+                        "source_path": hit.source_path,
+                        "line_number": hit.line_number,
+                        "score": hit.score,
+                        "proof": proof_content,
+                    }
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"Mathlib lookup failed: {e}")
+            return None
+
+    def _build_mathlib_alias_proof(
+        self,
+        theorem_name: str,
+        theorem_statement: str,
+        library_theorem: str,
+    ) -> str:
+        """Build a small adapter theorem that reuses a library theorem directly."""
+
+        binders = self._extract_forall_binders(theorem_statement)
+        theorem_lines = [
+            "import Mathlib",
+            "",
+            f"theorem {theorem_name} : {theorem_statement} := by",
+        ]
+
+        if binders:
+            theorem_lines.append(f"  intro {' '.join(binders)}")
+            theorem_lines.append(
+                f"  simpa using {library_theorem} {' '.join(binders)}"
+            )
+        else:
+            theorem_lines.append(f"  simpa using {library_theorem}")
+
+        return "\n".join(theorem_lines)
+
+    def _extract_forall_binders(self, theorem_statement: str) -> list[str]:
+        """Extract binder names from a leading chain of forall quantifiers."""
+
+        binders: list[str] = []
+        remaining = theorem_statement.strip()
+
+        while True:
+            match = self.FORALL_BINDER_PATTERN.match(remaining)
+            if not match:
+                break
+
+            binders.extend(name for name in match.group(1).split() if name)
+            remaining = match.group(3).strip()
+
+        return binders
+
+    def generate_explanation(
+        self,
+        context: AgentContext,
+        language: str = "en",
+    ) -> str:
+        """Generate user-friendly explanation of the proof.
+
+        Args:
+            context: Agent context with proof information.
+            language: Language code ('zh' for Chinese, 'en' for English).
+
+        Returns:
+            User-friendly explanation string.
+        """
+        if not self.proof_explainer:
+            return ""
+
+        # Use Mathlib proof if available, otherwise use the last successful attempt
+        lean_proof = ""
+        if context.mathlib_proof:
+            lean_proof = context.mathlib_proof
+        elif context.proof_attempts:
+            for attempt in reversed(context.proof_attempts):
+                if attempt.was_successful:
+                    lean_proof = attempt.lean_code
+                    break
+            if not lean_proof:
+                lean_proof = context.proof_attempts[-1].lean_code
+
+        if not lean_proof:
+            return ""
+
+        try:
+            explanation = self.proof_explainer.explain(
+                theorem_name=context.theorem_name,
+                theorem_statement=context.theorem_statement,
+                lean_proof=lean_proof,
+                language=language,
+            )
+            context.explanation = explanation
+            return explanation
+        except Exception as e:
+            logger.error(f"Explanation generation failed: {e}")
+            return ""

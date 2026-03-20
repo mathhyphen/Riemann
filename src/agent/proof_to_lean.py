@@ -26,6 +26,7 @@ theorem {theorem_name} : {theorem_statement} := by
         "intros",
         "rw",
         "simp",
+        "simpa",
         "exact",
         "apply",
         "refine",
@@ -103,6 +104,12 @@ class ProofToLeanConverter:
             logger.warning("Could not extract proof, using theorem only")
             lean_code = "sorry"
 
+        lean_code = self._strip_leading_imports(lean_code)
+        if self._is_full_declaration(lean_code):
+            full_proof = self._build_standalone_declaration(lean_code)
+            logger.info(f"Converted proof for: {theorem_name}")
+            return full_proof
+
         lean_code = self._strip_outer_declaration(lean_code)
         formatted_code = self.format_proof(lean_code)
 
@@ -113,28 +120,120 @@ class ProofToLeanConverter:
         logger.info(f"Converted proof for: {theorem_name}")
         return full_proof
 
-    def _strip_outer_declaration(self, lean_code: str) -> str:
-        """Remove a top-level theorem wrapper when the model emits one directly."""
+    def _strip_leading_imports(self, lean_code: str) -> str:
+        """Drop leading import lines because the converter adds Mathlib itself."""
 
+        lines = lean_code.splitlines()
+        while lines and (
+            not lines[0].strip() or lines[0].strip().startswith("import ")
+        ):
+            lines.pop(0)
+
+        return "\n".join(lines).strip()
+
+    def _is_full_declaration(self, lean_code: str) -> bool:
+        """Check whether the model already returned a theorem/lemma/example."""
+
+        for line in lean_code.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            return stripped.startswith(("theorem ", "lemma ", "example "))
+        return False
+
+    def _strip_outer_declaration(self, lean_code: str) -> str:
+        """Remove a top-level theorem wrapper when the model emits one directly.
+
+        If multiple theorem declarations are present (LLM generating alternatives),
+        only the first one is used.
+        """
         lines = [line.rstrip() for line in lean_code.splitlines()]
         non_empty = [line for line in lines if line.strip()]
         if not non_empty:
             return lean_code
 
+        # If it doesn't start with a declaration, return as-is
         first_line = non_empty[0].strip()
         declaration_prefixes = ("theorem ", "lemma ", "example ")
         if not first_line.startswith(declaration_prefixes):
             return lean_code
 
-        if ":= by" in first_line:
-            after_by = first_line.split(":= by", 1)[1].strip()
-            remaining_lines = non_empty[1:]
-            if after_by:
-                return "\n".join([after_by, *remaining_lines]).strip()
-            return "\n".join(remaining_lines).strip() or "sorry"
+        # Known tactic patterns that indicate valid proof content
+        tactic_patterns = (
+            "intro", "intros", "rw", "simp", "simpa", "exact", "apply", "refine",
+            "have", "let", "calc", "cases", "induction", "split", "left", "right",
+            "rfl", "refl", "exfalso", "trivial", "assumption", "contradiction",
+            "decide", "omega", "linarith", "aesop", "use", "exists", "show",
+            "from", "suffices", "by", "--", "fun", "if", "then", "else",
+        )
 
+        def is_tactic_line(line: str) -> bool:
+            """Check if a line looks like a Lean tactic."""
+            stripped = line.strip()
+            if not stripped:
+                return False
+            # Line starting with tactic keyword
+            for pattern in tactic_patterns:
+                if stripped == pattern or stripped.startswith(pattern + " ") or stripped.startswith(pattern + "\n"):
+                    return True
+            # Line that starts with whitespace and doesn't look like prose
+            if line.startswith(" ") or line.startswith("\t"):
+                # Could be tactic continuation
+                return True
+            return False
+
+        # Check for ":= by" pattern
+        if ":= by" in first_line:
+            # Extract everything after ":= by"
+            idx = first_line.index(":= by")
+            proof_part = first_line[idx + 5:].strip()  # after ":= by"
+            proof_lines = []
+            if proof_part:
+                if is_tactic_line(proof_part) or proof_part.startswith("{"):
+                    proof_lines.append(proof_part)
+            # Add subsequent lines until we hit non-tactic content
+            for line in non_empty[1:]:
+                stripped = line.strip()
+                # Stop at blank line (end of proof block) or non-tactic
+                if not stripped:
+                    break
+                if not is_tactic_line(line):
+                    break
+                proof_lines.append(stripped)
+            result = "\n".join(proof_lines).strip()
+            return result if result else "sorry"
+
+        if ":=" in first_line:
+            after_assign = first_line.split(":=", 1)[1].strip()
+            term_lines = [after_assign] if after_assign else []
+            for line in non_empty[1:]:
+                stripped = line.strip()
+                if not stripped:
+                    break
+                if stripped.startswith(declaration_prefixes):
+                    break
+                term_lines.append(stripped)
+
+            if not term_lines:
+                return "sorry"
+
+            if len(term_lines) == 1:
+                return f"exact {term_lines[0]}"
+
+            return "\n".join(["exact", *term_lines])
+
+        # Check for " by" at end of line (without :=)
         if first_line.endswith(" by"):
-            return "\n".join(non_empty[1:]).strip() or "sorry"
+            proof_lines = []
+            for line in non_empty[1:]:
+                stripped = line.strip()
+                if not stripped:
+                    break
+                if not is_tactic_line(line):
+                    break
+                proof_lines.append(stripped)
+            result = "\n".join(proof_lines).strip()
+            return result if result else "sorry"
 
         return lean_code
 
@@ -308,6 +407,12 @@ class ProofToLeanConverter:
             theorem_statement=theorem_statement,
             proof_code=proof_code,
         )
+
+    def _build_standalone_declaration(self, declaration_code: str) -> str:
+        """Build a Lean file around a complete theorem declaration."""
+
+        imports = self.template.imports_template
+        return f"{imports}\n\n{declaration_code.strip()}\n"
 
     def validate_tactics(self, proof_code: str) -> List[str]:
         """Validate that tactics are well-formed.
