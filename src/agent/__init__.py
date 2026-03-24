@@ -14,6 +14,13 @@ from .proof_to_lean import ProofToLeanConverter
 from .verification_loop import VerificationLoop
 from .mathlib_retriever import MathlibRetriever, MathlibTheoremHit
 from .proof_explainer import ProofExplainer
+from .workbench import (
+    ApplyResult,
+    LeanTarget,
+    ResearchWorkbench,
+    RunSummary,
+    WorkbenchSession,
+)
 
 __all__ = [
     "AgentContext",
@@ -25,4 +32,9 @@ __all__ = [
     "MathlibRetriever",
     "MathlibTheoremHit",
     "ProofExplainer",
+    "ApplyResult",
+    "LeanTarget",
+    "ResearchWorkbench",
+    "RunSummary",
+    "WorkbenchSession",
 ]

@@ -1,4 +1,4 @@
-"""Agent state management for Riemann proof verification."""
+"""Agent and workbench state management for Riemann proof verification."""
 
 import logging
 from dataclasses import dataclass, field
@@ -61,6 +61,90 @@ class ProofAttempt:
 
 
 @dataclass
+class LeanDiagnostic:
+    """Structured Lean verification feedback for research workflows."""
+
+    raw_message: str = ""
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    last_submitted_code: str = ""
+    failing_file: Optional[str] = None
+    execution_time: Optional[float] = None
+
+    @property
+    def primary_error(self) -> str:
+        """Return the most informative top-level error message."""
+        if self.errors:
+            return self.errors[0]
+        return self.raw_message
+
+
+@dataclass
+class TheoremPlan:
+    """Informal proof plan and decomposition for a theorem."""
+
+    overview: str = ""
+    subgoals: List[str] = field(default_factory=list)
+    candidate_lemmas: List[str] = field(default_factory=list)
+    notes: str = ""
+    raw_plan: str = ""
+    status: str = "draft"
+
+
+@dataclass
+class ResearchTarget:
+    """A theorem-like target inside a Lean project file."""
+
+    name: str
+    statement: str
+    file_path: Optional[str] = None
+    line_number: Optional[int] = None
+    module_name: Optional[str] = None
+    kind: str = "theorem"
+    status: str = "unexplored"
+
+
+@dataclass
+class WorkbenchRun:
+    """Summary of one workbench proving run."""
+
+    target_name: str
+    statement: str
+    success: bool
+    source: str = ""
+    iterations: int = 0
+    error: str = ""
+    proof_path: Optional[str] = None
+    timestamp: Optional[float] = None
+
+
+@dataclass
+class ResearchSession:
+    """Long-lived project-oriented session state."""
+
+    project_root: str
+    active_file: Optional[str] = None
+    active_target: Optional[ResearchTarget] = None
+    open_plans: Dict[str, TheoremPlan] = field(default_factory=dict)
+    recent_runs: List[WorkbenchRun] = field(default_factory=list)
+    last_diagnostic: Optional[LeanDiagnostic] = None
+    notes: Dict[str, str] = field(default_factory=dict)
+
+    def remember_run(self, run: WorkbenchRun) -> None:
+        """Keep a short run history for the interactive workbench."""
+        self.recent_runs.append(run)
+        self.recent_runs = self.recent_runs[-10:]
+
+    def set_plan(self, target_name: str, plan: TheoremPlan) -> None:
+        """Attach or update a theorem plan inside the session."""
+        self.open_plans[target_name] = plan
+
+    def get_plan(self, target_name: str) -> Optional[TheoremPlan]:
+        """Retrieve the saved plan for a target if present."""
+        return self.open_plans.get(target_name)
+
+
+@dataclass
 class AgentContext:
     """Execution context for the verification agent."""
 
@@ -74,6 +158,11 @@ class AgentContext:
     mathlib_proof: Optional[str] = None
     mathlib_source: Optional[str] = None
     explanation: Optional[str] = None
+    theorem_plan: Optional[TheoremPlan] = None
+    file_path: Optional[str] = None
+    latest_lean_code: str = ""
+    last_diagnostic: Optional[LeanDiagnostic] = None
+    mathlib_hits: List[Dict] = field(default_factory=list)
 
     @property
     def current_proof_attempt(self) -> Optional[ProofAttempt]:

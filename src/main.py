@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import time
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -21,8 +22,9 @@ try:
     from .agent.proof_explainer import ProofExplainer
     from .agent.proof_generator import ProofGenerator
     from .agent.proof_to_lean import ProofToLeanConverter
-    from .agent.state import AgentConfig
+    from .agent.state import AgentConfig, LeanDiagnostic, TheoremPlan
     from .agent.verification_loop import VerificationLoop
+    from .agent.workbench import ResearchWorkbench
     from .cli import RiemannCLI
     from .lean_api import LeanAPIClient, LeanConfig
     from .lean_module import LeanFactory
@@ -32,8 +34,9 @@ except ImportError:  # pragma: no cover - script execution fallback
     from src.agent.proof_explainer import ProofExplainer
     from src.agent.proof_generator import ProofGenerator
     from src.agent.proof_to_lean import ProofToLeanConverter
-    from src.agent.state import AgentConfig
+    from src.agent.state import AgentConfig, LeanDiagnostic, TheoremPlan
     from src.agent.verification_loop import VerificationLoop
+    from src.agent.workbench import ResearchWorkbench
     from src.cli import RiemannCLI
     from src.lean_api import LeanAPIClient, LeanConfig
     from src.lean_module import LeanFactory
@@ -106,6 +109,11 @@ class RiemannApp:
         self.cli = RiemannCLI(verbose=args.verbose)
         self.running = True
         self.max_iterations = args.max_iterations
+        self.project_root = self._resolve_project_root()
+        self.workbench = ResearchWorkbench(self.project_root)
+        self.latest_context = None
+        self.latest_result: Optional[dict] = None
+        self.latest_runtime: Optional[dict[str, Any]] = None
 
     def run(self) -> int:
         """Run the main application loop.
@@ -115,6 +123,24 @@ class RiemannApp:
         """
         try:
             self.cli.show_welcome()
+
+            if self.args.target_file and not self.args.target_name:
+                self.cli.display_error("--target-file requires --target-name")
+                return 1
+            if self.args.target_name and not self.args.target_file:
+                self.cli.display_error("--target-name requires --target-file")
+                return 1
+            if self.args.apply and not (self.args.target_file and self.args.target_name):
+                self.cli.display_error("--apply requires --target-file and --target-name")
+                return 1
+
+            if self.args.target_file and self.args.target_name:
+                return self._handle_target_file(
+                    self.args.target_file,
+                    self.args.target_name,
+                    plan_only=self.args.plan_only,
+                    apply_after_success=self.args.apply,
+                )
 
             if self.args.statement:
                 return self._handle_statement(self.args.statement)
@@ -129,7 +155,12 @@ class RiemannApp:
             self.cli.display_error(f"Unexpected error: {str(e)}", "Fatal Error")
             return 1
 
-    def _handle_statement(self, statement: str) -> int:
+    def _handle_statement(
+        self,
+        statement: str,
+        theorem_name: str = "user_theorem",
+        file_path: Optional[str] = None,
+    ) -> int:
         """Handle a single statement from command line.
 
         Args:
@@ -144,7 +175,11 @@ class RiemannApp:
         start_time = time.time()
 
         try:
-            result = self._process_statement(statement)
+            result = self._process_statement(
+                statement,
+                theorem_name=theorem_name,
+                file_path=file_path,
+            )
             elapsed = time.time() - start_time
 
             if result.get("success"):
@@ -154,6 +189,8 @@ class RiemannApp:
                     tokens_used=result.get("tokens", 0),
                     success=True,
                 )
+                if result.get("plan"):
+                    self.cli.display_markdown(result["plan"])
                 self.cli.print("\n[green]Proof verified successfully![/green]")
                 return 0
             else:
@@ -163,6 +200,10 @@ class RiemannApp:
                     tokens_used=result.get("tokens", 0),
                     success=False,
                 )
+                if result.get("plan"):
+                    self.cli.display_markdown(result["plan"])
+                if result.get("diagnostic"):
+                    self.cli.display_latest_lean_diagnostic(result["diagnostic"])
                 self.cli.display_error(result.get("error", "Verification failed"))
                 return 1
 
@@ -171,7 +212,13 @@ class RiemannApp:
             self.cli.display_error(f"Error: {str(e)}")
             return 1
 
-    def _process_statement(self, statement: str) -> dict:
+    def _process_statement(
+        self,
+        statement: str,
+        theorem_name: str = "user_theorem",
+        file_path: Optional[str] = None,
+        plan_only: bool = False,
+    ) -> dict:
         """Process a proof statement.
 
         This method:
@@ -187,106 +234,101 @@ class RiemannApp:
         """
         self.cli.display_verification_stage("initializing", "Setting up clients...")
 
-        # Detect user language for explanation
         user_language = detect_user_language(statement)
 
         try:
-            # Initialize LLM client
-            provider = detect_llm_provider()
-            llm_config = resolve_llm_config(provider)
-            llm_client = LLMFactory(
-                provider,
-                config=llm_config
+            runtime = self._build_runtime(require_verifier=not plan_only)
+            self.latest_runtime = runtime
+            proof_generator = runtime["proof_generator"]
+            verification_loop = runtime["verification_loop"]
+
+            target_name = theorem_name or "user_theorem"
+            target_file = file_path or self.workbench.session.active_file
+            plan_dict = proof_generator.generate_plan(
+                theorem_name=target_name,
+                theorem_statement=statement,
+                context={
+                    "file_path": target_file or "N/A",
+                    "last_error": (
+                        self.workbench.session.last_diagnostic.primary_error
+                        if self.workbench.session.last_diagnostic
+                        else "None"
+                    ),
+                    "notes": self.workbench.session.notes.get(target_name, ""),
+                    "plan_status": "new",
+                },
             )
-
-            # Initialize Lean verifier
-            lean_backend = detect_lean_backend()
-            if lean_backend == "local":
-                lean_client = LeanFactory(
-                    "local",
-                    lean_path=os.environ.get("LEAN_PATH"),
-                    lake_path=os.environ.get("LAKE_PATH"),
-                    lean_library_path=os.environ.get("LEAN_LIBRARY_PATH") or None,
-                    project_root=os.environ.get("LEAN_PROJECT_ROOT"),
-                    timeout=60.0,
-                )
-                if not lean_client.check_health():
-                    raise RuntimeError(
-                        "Local Lean executable is unavailable. "
-                        "Set LEAN_PATH to a working Lean 4 binary or install Lean via elan."
-                    )
-            else:
-                lean_config = LeanConfig(
-                    base_url=os.environ.get("LEAN_API_URL", "http://localhost:5000")
-                )
-                lean_client = LeanAPIClient(lean_config)
-                if not lean_client.health_check():
-                    raise RuntimeError(
-                        f"Lean server is unavailable at {lean_config.base_url}. "
-                        "Set LEAN_API_URL to a healthy server before running proofs."
-                    )
-
-            # Initialize Mathlib retriever and Proof explainer
-            mathlib_retriever = MathlibRetriever()
-            proof_explainer = ProofExplainer(llm_client, llm_config)
-
-            # Initialize agent components
-            proof_generator = ProofGenerator(llm_client, llm_config)
-            proof_converter = ProofToLeanConverter()
-
-            # Create verification loop
-            agent_config = AgentConfig(
-                max_iterations=self.max_iterations
+            theorem_plan = TheoremPlan(
+                overview=plan_dict.get("overview", ""),
+                subgoals=plan_dict.get("subgoals", []),
+                candidate_lemmas=plan_dict.get("candidate_lemmas", []),
+                notes=self.workbench.session.notes.get(target_name, ""),
+                raw_plan=plan_dict.get("raw_plan", ""),
+                status="planned",
             )
-            verification_loop = VerificationLoop(
-                proof_generator=proof_generator,
-                lean_converter=proof_converter,
-                verifier_api=lean_client,
-                config=agent_config,
-                mathlib_retriever=mathlib_retriever,
-                proof_explainer=proof_explainer,
-            )
+            self.workbench.session.set_plan(target_name, theorem_plan)
+
+            if plan_only:
+                return {
+                    "success": True,
+                    "iterations": 0,
+                    "tokens": 0,
+                    "plan": theorem_plan.raw_plan or theorem_plan.overview,
+                    "source": "plan",
+                }
 
             self.cli.display_verification_stage("generating", "Generating proof...")
 
-            # Run verification
             context = verification_loop.verify(
-                theorem_name="user_theorem",
-                theorem_statement=statement
+                theorem_name=target_name,
+                theorem_statement=statement,
+                theorem_plan=theorem_plan,
+                file_path=target_file,
             )
+            self.latest_context = context
 
+            explanation = ""
             if context.state.value == "success":
-                # Generate explanation for successful proof
                 explanation = verification_loop.generate_explanation(
                     context, language=user_language
                 )
 
-                last_attempt = context.proof_attempts[-1] if context.proof_attempts else None
-                proof_source = "mathlib" if context.mathlib_proof else "generated"
+            last_attempt = context.proof_attempts[-1] if context.proof_attempts else None
+            proof_source = "mathlib" if context.mathlib_proof else "generated"
+            proof = context.mathlib_proof or (last_attempt.lean_code if last_attempt else "")
 
-                # Display the explanation
-                if explanation:
-                    self.cli.display_proof_explanation(
-                        theorem=f"user_theorem : {statement}",
-                        explanation=explanation,
-                        source=proof_source,
+            result = {
+                "success": context.state.value == "success",
+                "iterations": context.current_iteration,
+                "tokens": 0,
+                "proof": proof,
+                "lean_code": context.latest_lean_code or proof,
+                "explanation": explanation,
+                "source": proof_source,
+                "plan": theorem_plan.raw_plan or theorem_plan.overview,
+                "diagnostic": context.last_diagnostic,
+                "error": (
+                    ""
+                    if context.state.value == "success"
+                    else (
+                        context.last_diagnostic.primary_error
+                        if context.last_diagnostic
+                        else f"Failed after {context.current_iteration} iterations"
                     )
+                ),
+                "state": context.state.value,
+            }
+            self.latest_result = result
 
-                return {
-                    "success": True,
-                    "iterations": context.current_iteration,
-                    "tokens": 0,
-                    "proof": context.mathlib_proof or (last_attempt.lean_code if last_attempt else ""),
-                    "explanation": explanation,
-                    "source": proof_source,
-                }
-            else:
-                return {
-                    "success": False,
-                    "iterations": context.current_iteration,
-                    "tokens": 0,
-                    "error": f"Failed after {context.current_iteration} iterations",
-                }
+            if explanation:
+                self.cli.display_proof_explanation(
+                    theorem=f"{target_name} : {statement}",
+                    explanation=explanation,
+                    source=proof_source,
+                )
+
+            self._record_workbench_run(target_name, statement, result, context)
+            return result
 
         except Exception as e:
             logger.exception("Error in proof processing")
@@ -296,6 +338,267 @@ class RiemannApp:
                 "tokens": 0,
                 "error": str(e),
             }
+
+    def _build_runtime(self, require_verifier: bool = True) -> dict:
+        """Create the current proving runtime for the active workspace."""
+
+        provider = detect_llm_provider()
+        llm_config = resolve_llm_config(provider)
+        llm_client = LLMFactory(provider, config=llm_config)
+
+        lean_client = None
+        if require_verifier:
+            lean_client = self._build_verifier()
+
+        proof_generator = ProofGenerator(llm_client, llm_config)
+        verification_loop = None
+        if require_verifier:
+            verification_loop = VerificationLoop(
+                proof_generator=proof_generator,
+                lean_converter=ProofToLeanConverter(),
+                verifier_api=lean_client,
+                config=AgentConfig(max_iterations=self.max_iterations),
+                mathlib_retriever=MathlibRetriever(),
+                proof_explainer=ProofExplainer(llm_client, llm_config),
+            )
+        return {
+            "provider": provider,
+            "lean_backend": detect_lean_backend(),
+            "lean_client": lean_client,
+            "proof_generator": proof_generator,
+            "verification_loop": verification_loop,
+        }
+
+    def _build_verifier(self):
+        """Create a Lean verifier without initializing the LLM stack."""
+
+        lean_backend = detect_lean_backend()
+        project_root = self.workbench.session.project_root or self.project_root
+        if lean_backend == "local":
+            lean_client = LeanFactory(
+                "local",
+                lean_path=os.environ.get("LEAN_PATH"),
+                lake_path=os.environ.get("LAKE_PATH"),
+                lean_library_path=os.environ.get("LEAN_LIBRARY_PATH") or None,
+                project_root=project_root,
+                timeout=60.0,
+            )
+            if not lean_client.check_health():
+                raise RuntimeError(
+                    "Local Lean executable is unavailable. "
+                    "Set LEAN_PATH to a working Lean 4 binary or install Lean via elan."
+                )
+            return lean_client
+
+        lean_config = LeanConfig(
+            base_url=os.environ.get("LEAN_API_URL", "http://localhost:5000")
+        )
+        lean_client = LeanAPIClient(lean_config)
+        if not lean_client.health_check():
+            raise RuntimeError(
+                f"Lean server is unavailable at {lean_config.base_url}. "
+                "Set LEAN_API_URL to a healthy server before running proofs."
+            )
+        return lean_client
+
+    def _record_workbench_run(
+        self,
+        theorem_name: str,
+        statement: str,
+        result: dict,
+        context: Optional[object],
+    ) -> None:
+        """Persist the latest run in the research workbench session."""
+
+        summary = self.workbench.build_run_summary(
+            session=self.workbench.session,
+            context=context,
+            result={
+                **result,
+                "target_name": theorem_name,
+                "statement": statement,
+            },
+            timestamp=time.strftime("%Y-%m-%d %H:%M:%S %z"),
+        )
+        self.workbench.record_run_summary(summary)
+        if context is not None and getattr(context, "last_diagnostic", None):
+            self.workbench.session.last_diagnostic = context.last_diagnostic
+
+    def _handle_target_file(
+        self,
+        target_file: str,
+        target_name: str,
+        *,
+        plan_only: bool = False,
+        apply_after_success: bool = False,
+    ) -> int:
+        """Run the workbench against a theorem found in a Lean file."""
+
+        self.workbench.open_file(target_file)
+        target = self.workbench.focus_target(target_name)
+        self.cli.display_workspace_status(self.workbench.session)
+        self.cli.display_active_target(target)
+        if plan_only:
+            result = self._process_statement(
+                target.statement,
+                theorem_name=target.name,
+                file_path=target.file_path,
+                plan_only=True,
+            )
+            if result.get("plan"):
+                self.cli.display_markdown(result["plan"])
+            return 0 if result.get("success") else 1
+
+        exit_code = self._handle_statement(
+            target.statement,
+            theorem_name=target.name,
+            file_path=target.file_path,
+        )
+        if exit_code == 0 and apply_after_success:
+            return self._apply_and_verify_active_target()
+        return exit_code
+
+    def _apply_and_verify_active_target(self) -> int:
+        """Apply the latest verified proof to the active target and verify the file."""
+
+        target = self.workbench.session.active_target
+        if target is None:
+            self.cli.display_error("No active target selected. Use :file and :focus first.")
+            return 1
+
+        lean_code = (self.latest_result or {}).get("lean_code", "")
+        if not (self.latest_result or {}).get("success") or not lean_code:
+            self.cli.display_error("No successful proof is available to apply.")
+            return 1
+
+        try:
+            runtime = self.latest_runtime or self._build_runtime(require_verifier=True)
+            verifier = runtime.get("lean_client")
+            update = self.workbench.apply_proof(
+                lean_code,
+                theorem_name=target.name,
+                verifier=verifier,
+                timeout=self._build_runtime_timeout(),
+            )
+            if getattr(update, "target", None) is not None:
+                self.cli.display_active_target(update.target)
+            else:
+                self.cli.display_active_target(self.workbench.session.active_target)
+            if update.diagnostic is not None:
+                diagnostic = self._diagnostic_from_verification(
+                    update.diagnostic,
+                    file_path=update.file_path,
+                    last_code=update.applied_declaration,
+                )
+                self.workbench.session.last_diagnostic = diagnostic
+                self.cli.display_latest_lean_diagnostic(diagnostic)
+            if update.success:
+                self.cli.print(
+                    update.message or "Applied proof and verified the file successfully.",
+                    "green",
+                )
+                return 0
+            self.cli.display_error(
+                update.message or "Applied proof, but file verification failed."
+            )
+            return 1
+        except NotImplementedError as e:
+            self.cli.display_error(f"{e} Set LEAN_BACKEND=local for :apply/--apply.")
+            return 1
+        except Exception as e:
+            logger.exception("Failed to apply proof to target")
+            self.cli.display_error(str(e))
+            return 1
+
+    def _verify_active_file(self) -> dict:
+        """Verify the currently active Lean file."""
+
+        if not self.workbench.session.active_file:
+            raise ValueError("No active Lean file selected")
+
+        runtime = self.latest_runtime or self._build_runtime(require_verifier=True)
+        verifier = runtime.get("lean_client") or self._build_verifier()
+        response = self.workbench.verify_active_file(
+            verifier,
+            timeout=self._build_runtime_timeout(),
+        )
+        diagnostic = self._diagnostic_from_verification(
+            response,
+            file_path=self.workbench.session.active_file,
+        )
+        self.workbench.session.last_diagnostic = diagnostic
+        return {
+            "success": self._lookup_verification_value(response, "success", False),
+            "message": self._lookup_verification_value(response, "message", ""),
+            "errors": self._lookup_verification_value(response, "errors", []),
+            "warnings": self._lookup_verification_value(response, "warnings", []),
+            "execution_time": self._lookup_verification_value(response, "execution_time", None),
+            "diagnostic": diagnostic,
+            "error": diagnostic.primary_error,
+        }
+
+    def _build_runtime_timeout(self) -> float:
+        return AgentConfig().timeout_seconds
+
+    def _diagnostic_from_verification(
+        self,
+        verification: Any,
+        *,
+        file_path: Optional[str] = None,
+        last_code: str = "",
+    ) -> LeanDiagnostic:
+        message = self._lookup_verification_value(verification, "message", "") or ""
+        failing_file = self._lookup_verification_value(
+            verification,
+            "checked_file",
+            None,
+        ) or file_path
+        if isinstance(message, str):
+            match = re.search(r"([A-Za-z]:\\[^:]+\.lean|\S+\.lean)", message)
+            if match:
+                failing_file = match.group(1)
+
+        diagnostic_code = last_code
+        checked_file = failing_file or file_path
+        if not diagnostic_code and checked_file and os.path.exists(checked_file):
+            try:
+                with open(checked_file, "r", encoding="utf-8") as handle:
+                    diagnostic_code = handle.read()
+            except OSError:
+                diagnostic_code = ""
+
+        return LeanDiagnostic(
+            raw_message=str(message),
+            errors=[
+                str(error)
+                for error in self._lookup_verification_value(verification, "errors", [])
+            ],
+            warnings=[
+                str(warning)
+                for warning in self._lookup_verification_value(verification, "warnings", [])
+            ],
+            last_submitted_code=diagnostic_code,
+            failing_file=failing_file,
+            execution_time=self._lookup_verification_value(
+                verification,
+                "execution_time",
+                None,
+            ),
+        )
+
+    def _lookup_verification_value(self, verification: Any, key: str, default: Any) -> Any:
+        if isinstance(verification, dict):
+            return verification.get(key, default)
+        return getattr(verification, key, default)
+
+    def _resolve_project_root(self) -> str:
+        """Resolve the active Lean project root for the workbench."""
+
+        return (
+            getattr(self.args, "project_root", None)
+            or os.environ.get("LEAN_PROJECT_ROOT")
+            or os.getcwd()
+        )
 
     def _main_loop(self) -> int:
         """Run the interactive main loop.
@@ -340,7 +643,10 @@ class RiemannApp:
         Args:
             command: Command string.
         """
-        cmd = command.lower().strip()
+        raw = command.strip()
+        head, _, tail = raw.partition(" ")
+        cmd = head.lower()
+        arg = tail.strip()
 
         if cmd in (":help", ":h", "help"):
             self.cli.show_help()
@@ -358,6 +664,112 @@ class RiemannApp:
 
         elif cmd == ":model":
             self._show_model_info()
+
+        elif cmd == ":open":
+            if not arg:
+                self.cli.display_error("Usage: :open <lean-project-root>")
+                return
+            self.project_root = arg
+            self.workbench.open_project(arg)
+            self.cli.display_workspace_status(self.workbench.session)
+
+        elif cmd == ":file":
+            if not arg:
+                self.cli.display_error("Usage: :file <relative-or-absolute-lean-file>")
+                return
+            try:
+                targets = self.workbench.open_file(arg)
+                self.cli.display_workspace_status(self.workbench.session)
+                if self.workbench.session.active_target:
+                    self.cli.display_active_target(self.workbench.session.active_target)
+                if targets:
+                    self.cli.print(
+                        "Discovered targets: " + ", ".join(target.name for target in targets[:10]),
+                        "cyan",
+                    )
+            except Exception as e:
+                self.cli.display_error(str(e))
+
+        elif cmd == ":focus":
+            if not arg:
+                self.cli.display_error("Usage: :focus <theorem-name>")
+                return
+            try:
+                target = self.workbench.focus_target(arg)
+                self.cli.display_active_target(target)
+            except Exception as e:
+                self.cli.display_error(str(e))
+
+        elif cmd == ":targets":
+            targets = self.workbench.session.targets
+            if not targets:
+                self.cli.display_error("No theorem targets discovered. Use :file first.", "Info")
+                return
+            self.cli.print(
+                "Targets: " + ", ".join(target.name for target in targets),
+                "cyan",
+            )
+
+        elif cmd == ":status":
+            self.cli.display_workspace_status(self.workbench.session)
+            self.cli.display_active_target(self.workbench.session.active_target)
+            if self.workbench.session.last_diagnostic:
+                self.cli.display_latest_lean_diagnostic(self.workbench.session.last_diagnostic)
+
+        elif cmd == ":history":
+            attempts = [
+                {
+                    "was_successful": run.get("success", False),
+                    "proof_idea": run.get("source", ""),
+                    "lean_code": run.get("lean_code", ""),
+                    "error_message": run.get("error", ""),
+                    "status": run.get("status", "unknown"),
+                }
+                for run in self.workbench.session.recent_runs
+            ]
+            self.cli.display_attempt_history(attempts)
+
+        elif cmd == ":goals":
+            self.cli.display_active_target(self.workbench.session.active_target)
+            if self.latest_context and getattr(self.latest_context, "latest_lean_code", ""):
+                self.cli.display_proof(self.latest_context.latest_lean_code)
+            if self.workbench.session.last_diagnostic:
+                self.cli.display_latest_lean_diagnostic(self.workbench.session.last_diagnostic)
+
+        elif cmd == ":plan":
+            if not self.workbench.session.active_target:
+                self.cli.display_error("No active target selected. Use :file and :focus first.")
+                return
+            target = self.workbench.session.active_target
+            result = self._process_statement(
+                target.statement,
+                theorem_name=target.name,
+                file_path=target.file_path,
+                plan_only=True,
+            )
+            if result.get("plan"):
+                self.cli.display_markdown(result["plan"])
+
+        elif cmd == ":prove":
+            if not self.workbench.session.active_target:
+                self.cli.display_error("No active target selected. Use :file and :focus first.")
+                return
+            target = self.workbench.session.active_target
+            self._handle_target_file(target.file_path or "", target.name, plan_only=False)
+
+        elif cmd == ":apply":
+            self._apply_and_verify_active_target()
+
+        elif cmd == ":verify-file":
+            try:
+                result = self._verify_active_file()
+                self.cli.display_latest_lean_diagnostic(result.get("diagnostic"))
+                if result.get("success"):
+                    self.cli.print("Lean file verified successfully.", "green")
+                else:
+                    self.cli.display_error(result.get("error", "File verification failed"))
+            except Exception as e:
+                self.cli.display_error(str(e))
 
         else:
             self.cli.print(f"Unknown command: {command}", "yellow")
@@ -403,6 +815,33 @@ def create_parser() -> argparse.ArgumentParser:
         "statement",
         nargs="?",
         help="Statement or theorem to prove",
+    )
+
+    parser.add_argument(
+        "--project-root",
+        help="Lean project root for workbench mode",
+    )
+
+    parser.add_argument(
+        "--target-file",
+        help="Lean file to inspect in workbench mode",
+    )
+
+    parser.add_argument(
+        "--target-name",
+        help="Theorem or lemma name to focus inside --target-file",
+    )
+
+    parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Generate a theorem plan without running Lean verification",
+    )
+
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply a successful proof back into --target-file and verify the file",
     )
 
     parser.add_argument(

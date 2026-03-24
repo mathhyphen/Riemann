@@ -9,6 +9,7 @@ from .state import (
     AgentConfig,
     AgentContext,
     ErrorCategory,
+    LeanDiagnostic,
     ProofAttempt,
     ProofState,
 )
@@ -116,6 +117,8 @@ class VerificationLoop:
         self,
         theorem_name: str,
         theorem_statement: str,
+        theorem_plan: Any = None,
+        file_path: Optional[str] = None,
     ) -> AgentContext:
         """Run the complete verification loop.
 
@@ -131,6 +134,8 @@ class VerificationLoop:
             theorem_statement=theorem_statement,
             config=self.config,
         )
+        context.theorem_plan = theorem_plan
+        context.file_path = file_path
 
         logger.info(f"Starting verification for: {theorem_name}")
 
@@ -139,6 +144,7 @@ class VerificationLoop:
         if mathlib_hit:
             context.mathlib_proof = mathlib_hit.get("proof", "")
             context.mathlib_source = mathlib_hit.get("source_path", "")
+            context.mathlib_hits = mathlib_hit.get("all_hits", [])
 
             # Verify the Mathlib proof directly
             if context.mathlib_proof:
@@ -184,6 +190,8 @@ class VerificationLoop:
         self,
         theorem_name: str,
         theorem_statement: str,
+        theorem_plan: Any = None,
+        file_path: Optional[str] = None,
     ) -> Generator[Dict[str, Any], None, None]:
         """Run verification with streaming updates.
 
@@ -199,6 +207,8 @@ class VerificationLoop:
             theorem_statement=theorem_statement,
             config=self.config,
         )
+        context.theorem_plan = theorem_plan
+        context.file_path = file_path
 
         yield {"state": "started", "theorem": theorem_name}
 
@@ -244,6 +254,7 @@ class VerificationLoop:
             theorem_name=context.theorem_name,
             theorem_statement=context.theorem_statement,
         )
+        context.latest_lean_code = lean_code
 
         context.update_state(ProofState.VERIFYING)
 
@@ -280,6 +291,13 @@ class VerificationLoop:
         previous_attempts = []
         last_error = "None"
         error_category = "N/A"
+        file_path = context.file_path or "N/A"
+        notes = context.theorem_plan.notes if context.theorem_plan else "None"
+        plan_status = context.theorem_plan.status if context.theorem_plan else "new"
+        theorem_plan = context.theorem_plan.raw_plan if context.theorem_plan else ""
+        last_diagnostic = (
+            context.last_diagnostic.primary_error if context.last_diagnostic else "None"
+        )
 
         if context.proof_attempts:
             recent_attempts = context.proof_attempts[-3:]
@@ -300,6 +318,11 @@ class VerificationLoop:
             "previous_attempts": previous_attempts,
             "last_error": last_error,
             "error_category": error_category,
+            "file_path": file_path,
+            "notes": notes,
+            "plan_status": plan_status,
+            "theorem_plan": theorem_plan,
+            "last_diagnostic": last_diagnostic,
         }
 
     def _submit_verification(
@@ -321,32 +344,54 @@ class VerificationLoop:
                     timeout=self.config.timeout_seconds,
                 )
                 if isinstance(response, dict):
+                    self._update_diagnostic_from_payload(context, response, lean_code)
                     return response
                 if hasattr(response, "success"):
-                    return {
+                    payload = {
                         "success": response.success,
                         "message": getattr(response, "message", ""),
                         "error": getattr(response, "message", ""),
                         "errors": getattr(response, "errors", []),
+                        "warnings": getattr(response, "warnings", []),
+                        "execution_time": getattr(response, "execution_time", None),
+                        "failing_file": getattr(response, "checked_file", context.file_path),
                     }
+                    self._update_diagnostic_from_payload(context, payload, lean_code)
+                    return payload
+                self._update_diagnostic_from_payload(context, {}, lean_code)
                 return response
 
             response = self.verifier_api.verify(
                 LeanRequest(code=lean_code, timeout=self.config.timeout_seconds)
             )
             if getattr(response, "is_success", False):
-                return {"success": True}
+                payload = {"success": True, "message": getattr(response, "message", "")}
+                self._update_diagnostic_from_payload(context, payload, lean_code)
+                return payload
 
             error_message = response.message
             if response.errors:
                 error_message = "; ".join(str(error) for error in response.errors)
 
-            return {"success": False, "error": error_message}
+            payload = {
+                "success": False,
+                "error": error_message,
+                "message": getattr(response, "message", error_message),
+                "errors": getattr(response, "errors", []),
+                "warnings": getattr(response, "warnings", []),
+                "execution_time": getattr(response, "execution_time", None),
+            }
+            self._update_diagnostic_from_payload(context, payload, lean_code)
+            return payload
         except LeanValidationError as e:
-            return {"success": False, "error": str(e)}
+            payload = {"success": False, "error": str(e), "message": str(e)}
+            self._update_diagnostic_from_payload(context, payload, lean_code)
+            return payload
         except Exception as e:
             logger.error(f"Verification API error: {e}")
-            return {"success": False, "error": str(e)}
+            payload = {"success": False, "error": str(e), "message": str(e)}
+            self._update_diagnostic_from_payload(context, payload, lean_code)
+            return payload
 
     def _categorize_error(self, error_message: str) -> ErrorCategory:
         """Categorize verification error.
@@ -487,6 +532,16 @@ class VerificationLoop:
                         "line_number": hit.line_number,
                         "score": hit.score,
                         "proof": proof_content,
+                        "all_hits": [
+                            {
+                                "name": candidate.name,
+                                "signature": candidate.signature,
+                                "source_path": candidate.source_path,
+                                "line_number": candidate.line_number,
+                                "score": candidate.score,
+                            }
+                            for candidate in hits
+                        ],
                     }
 
             return None
@@ -580,3 +635,27 @@ class VerificationLoop:
         except Exception as e:
             logger.error(f"Explanation generation failed: {e}")
             return ""
+
+    def _update_diagnostic_from_payload(
+        self,
+        context: AgentContext,
+        payload: Dict[str, Any],
+        lean_code: str,
+    ) -> None:
+        """Persist structured Lean verification feedback in the context."""
+
+        message = payload.get("error") or payload.get("message") or ""
+        failing_file = payload.get("failing_file")
+        if isinstance(message, str):
+            file_match = re.search(r"([A-Za-z]:\\[^:]+\.lean|\S+\.lean)", message)
+            if file_match and not failing_file:
+                failing_file = file_match.group(1)
+
+        context.last_diagnostic = LeanDiagnostic(
+            raw_message=str(message),
+            errors=[str(error) for error in payload.get("errors", [])],
+            warnings=[str(warning) for warning in payload.get("warnings", [])],
+            last_submitted_code=lean_code,
+            failing_file=failing_file,
+            execution_time=payload.get("execution_time"),
+        )

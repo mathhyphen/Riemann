@@ -100,8 +100,8 @@ class OutputFormatter:
 
     def format_welcome(self) -> Panel:
         welcome_text = Text()
-        welcome_text.append("Riemann - Mathematical Proof Assistant\n\n", style="bold cyan")
-        welcome_text.append("Enter your mathematical statement or theorem to begin.\n")
+        welcome_text.append("Riemann - Lean Research Workbench\n\n", style="bold cyan")
+        welcome_text.append("Enter a theorem statement or attach to a Lean file-based target.\n")
         welcome_text.append("Type ", style="white")
         welcome_text.append(":help", style="cyan")
         welcome_text.append(" for commands, ", style="white")
@@ -125,6 +125,17 @@ class OutputFormatter:
             (":clear, :c", "Clear the screen"),
             (":verbose", "Toggle verbose output"),
             (":model", "Show current model configuration"),
+            (":open <root>", "Attach the workbench to a Lean project root"),
+            (":file <path>", "Open a Lean file and discover theorem targets"),
+            (":focus <name>", "Focus a discovered theorem or lemma"),
+            (":targets", "List discovered targets in the active Lean file"),
+            (":status", "Show workspace, target, and diagnostic summary"),
+            (":plan", "Generate an informal theorem plan for the active target"),
+            (":prove", "Run the active target through the full proof pipeline"),
+            (":apply", "Write the latest successful proof back into the active file"),
+            (":verify-file", "Run Lean against the active file as it exists on disk"),
+            (":goals", "Show the latest Lean code and diagnostic snapshot"),
+            (":history", "Show recent workbench runs"),
         ]
 
         for cmd, desc in commands:
@@ -133,6 +144,13 @@ class OutputFormatter:
         help_text.append("\nExamples:\n", style="bold cyan")
         help_text.append('  prove "forall n : Nat, n + 0 = n"\n', style="dim")
         help_text.append('  verify "theorem example : 1 + 1 = 2 := rfl"\n', style="dim")
+        help_text.append("  :open D:/apps/lean/lean_verifier\n", style="dim")
+        help_text.append("  :file SpherePacking/Main.lean\n", style="dim")
+        help_text.append("  :focus main_theorem\n", style="dim")
+        help_text.append("  :plan\n", style="dim")
+        help_text.append("  :prove\n", style="dim")
+        help_text.append("  :apply\n", style="dim")
+        help_text.append("  :verify-file\n", style="dim")
 
         return Panel(
             help_text,
