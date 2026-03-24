@@ -92,6 +92,14 @@ def build_main_stubs() -> Dict[str, types.ModuleType]:
         "src.agent.proof_generator",
         ProofGenerator=type("ProofGenerator", (), {}),
     )
+    mathlib_retriever_pkg = make_module(
+        "src.agent.mathlib_retriever",
+        MathlibRetriever=type("MathlibRetriever", (), {}),
+    )
+    proof_explainer_pkg = make_module(
+        "src.agent.proof_explainer",
+        ProofExplainer=type("ProofExplainer", (), {}),
+    )
     proof_to_lean_pkg = make_module(
         "src.agent.proof_to_lean",
         ProofToLeanConverter=type("ProofToLeanConverter", (), {}),
@@ -100,9 +108,15 @@ def build_main_stubs() -> Dict[str, types.ModuleType]:
         "src.agent.verification_loop",
         VerificationLoop=type("VerificationLoop", (), {}),
     )
+    workbench_pkg = make_module(
+        "src.agent.workbench",
+        ResearchWorkbench=type("ResearchWorkbench", (), {}),
+    )
     state_pkg = make_module(
         "src.agent.state",
         AgentConfig=type("AgentConfig", (), {}),
+        LeanDiagnostic=type("LeanDiagnostic", (), {}),
+        TheoremPlan=type("TheoremPlan", (), {}),
     )
 
     return {
@@ -112,8 +126,11 @@ def build_main_stubs() -> Dict[str, types.ModuleType]:
         "src.llm_module": llm_pkg,
         "src.lean_api": lean_pkg,
         "src.lean_module": lean_module_pkg,
+        "src.agent.mathlib_retriever": mathlib_retriever_pkg,
+        "src.agent.proof_explainer": proof_explainer_pkg,
         "src.agent.proof_generator": proof_generator_pkg,
         "src.agent.proof_to_lean": proof_to_lean_pkg,
         "src.agent.verification_loop": verification_loop_pkg,
+        "src.agent.workbench": workbench_pkg,
         "src.agent.state": state_pkg,
     }

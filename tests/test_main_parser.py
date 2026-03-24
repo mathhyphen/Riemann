@@ -48,3 +48,30 @@ def test_detect_lean_backend_defaults_to_http(monkeypatch) -> None:
     monkeypatch.delenv("LEAN_BACKEND", raising=False)
 
     assert main_module.detect_lean_backend() == "http"
+
+
+def test_create_parser_handles_workbench_target_options() -> None:
+    main_module = load_module_from_source(
+        "riemann_test_main_workbench_parser",
+        "src/main.py",
+        stubs=build_main_stubs(),
+    )
+
+    args = main_module.create_parser().parse_args(
+        [
+            "--project-root",
+            "D:/apps/lean/lean_verifier",
+            "--target-file",
+            "SpherePacking/Main.lean",
+            "--target-name",
+            "main_theorem",
+            "--plan-only",
+            "--apply",
+        ]
+    )
+
+    assert args.project_root == "D:/apps/lean/lean_verifier"
+    assert args.target_file == "SpherePacking/Main.lean"
+    assert args.target_name == "main_theorem"
+    assert args.plan_only is True
+    assert args.apply is True

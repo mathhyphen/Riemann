@@ -45,3 +45,21 @@ def test_agent_config_remains_immutable() -> None:
         pass
     else:
         raise AssertionError("AgentConfig should be frozen")
+
+
+def test_research_session_tracks_plans_and_diagnostics() -> None:
+    state = load_module_from_source("riemann_test_agent_state_workbench", "src/agent/state.py")
+
+    session = state.ResearchSession(project_root="D:/apps/lean/lean_verifier")
+    plan = state.TheoremPlan(overview="Try induction", status="planned")
+    diagnostic = state.LeanDiagnostic(
+        raw_message="Main.lean:12: error: unknown tactic",
+        errors=["Main.lean:12: error: unknown tactic"],
+        last_submitted_code="theorem t := by sorry",
+    )
+
+    session.set_plan("demo", plan)
+    session.last_diagnostic = diagnostic
+
+    assert session.get_plan("demo") == plan
+    assert session.last_diagnostic.primary_error == "Main.lean:12: error: unknown tactic"
